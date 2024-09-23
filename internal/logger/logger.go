@@ -28,7 +28,7 @@ func Init(debug bool) {
 }
 
 func initializeLoggers() {
-	logFlags := log.Ldate | log.Ltime
+	logFlags := log.Ldate | log.Ltime | log.Lmicroseconds
 	if debugMode {
 		logFlags |= log.Lshortfile // Add file name and line number
 	}
