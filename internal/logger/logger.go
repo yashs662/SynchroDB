@@ -24,6 +24,10 @@ var (
 
 func Init(debug bool) {
 	debugMode = debug
+	initializeLoggers()
+}
+
+func initializeLoggers() {
 	logFlags := log.Ldate | log.Ltime
 	if debugMode {
 		logFlags |= log.Lshortfile // Add file name and line number
@@ -69,4 +73,9 @@ func Debugf(format string, v ...interface{}) {
 	if debugMode {
 		debugLogger.Printf(format, v...)
 	}
+}
+
+func SetDebugMode(debug bool) {
+	debugMode = debug
+	initializeLoggers()
 }
