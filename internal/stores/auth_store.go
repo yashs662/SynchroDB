@@ -115,6 +115,13 @@ func Decrypt(ciphertext, key []byte) ([]byte, error) {
 
 // AddUser adds a new user to the credential store
 func (cs *CredentialStore) AddUser(username, password, role string) error {
+	// Check if the username already exists
+	for _, user := range cs.Users {
+		if user.Username == username {
+			return fmt.Errorf("username %s is already taken", username)
+		}
+	}
+
 	hashedPassword, err := HashPassword(password)
 	if err != nil {
 		return err

@@ -5,8 +5,9 @@ import (
 )
 
 type KVStore struct {
-	mu    sync.RWMutex
-	store map[string]string
+	mu          sync.RWMutex
+	store       map[string]string
+	Credentials CredentialStore
 }
 
 func NewStore() *KVStore {

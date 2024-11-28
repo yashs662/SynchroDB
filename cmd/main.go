@@ -25,6 +25,7 @@ func main() {
 	loadedCredentials, err := stores.LoadCredentials(config.EncryptionKey, config.CredentialFilePath)
 	if err != nil {
 		logger.Errorf("Error loading credentials: %v", err)
+		os.Exit(1)
 	} else {
 		config.Credentials = *loadedCredentials
 	}
@@ -38,6 +39,7 @@ func main() {
 
 	// Initialize API handlers
 	handlers := api.NewHandlers(store, config.JwtSecret)
+	handlers.Store.Credentials = config.Credentials
 
 	// Set up the HTTP routes
 	handlers.SetupRoutes()

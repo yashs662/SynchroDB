@@ -54,18 +54,13 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// hash the password
-	// compare with stored hash
-	// if match, generate token
-	// return token
-
-	hashedPassword, exists := h.Store.Get(creds.Username)
-	if !exists {
+	user, err := h.Store.Credentials.FindUserByUsername(creds.Username)
+	if err != nil {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
-	if hashedPassword != creds.Password {
+	if err := stores.ComparePassword(user.HashedPassword, creds.Password); err != nil {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}

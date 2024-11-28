@@ -2,7 +2,6 @@ package config
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,18 +25,18 @@ type Config struct {
 
 func (c *Config) validateConfig() {
 	if c.ID == "" {
-		fmt.Println("Error: Node ID cannot be empty")
+		logger.Error("Node ID cannot be empty")
 		os.Exit(1)
 	}
 
 	if c.Port == "" {
-		fmt.Println("Error: Port cannot be empty")
+		logger.Error("Port cannot be empty")
 		os.Exit(1)
 	}
 
 	portNum, err := strconv.Atoi(c.Port)
 	if err != nil || portNum < 1 || portNum > 65535 {
-		fmt.Println("Error: Invalid port number. Must be between 1 and 65535")
+		logger.Error("Invalid port number. Must be between 1 and 65535")
 		os.Exit(1)
 	}
 
@@ -46,14 +45,14 @@ func (c *Config) validateConfig() {
 		logger.Infof("Number of peers: %d", len(c.Peers))
 		for _, peer := range c.Peers {
 			if peer == "" {
-				fmt.Println("Error: Peer address cannot be empty")
+				logger.Error("Peer address cannot be empty")
 				os.Exit(1)
 			}
 		}
 	}
 }
 
-func (c *Config) ValidateEnvironment() {
+func (c *Config) ValidateEnvironment(setup *bool) {
 
 	logger.Info("Running Environment checks...")
 
@@ -65,6 +64,14 @@ func (c *Config) ValidateEnvironment() {
 	if c.CredentialFilePath == "" {
 		logger.Errorf("SYNCHRODB_CREDENTIAL_FILE_PATH environment variable not set")
 		os.Exit(1)
+	}
+
+	if !*setup {
+		if _, err := os.Stat(c.CredentialFilePath); os.IsNotExist(err) {
+			logger.Errorf("Credential file does not exist at %s", c.CredentialFilePath)
+			logger.Warn("Please run the setup command first")
+			os.Exit(1)
+		}
 	}
 
 	if c.EncryptionKey == nil {
@@ -117,10 +124,16 @@ func ParseFlags() Config {
 		EncryptionKey:      encryptionKey,
 	}
 
-	config.ValidateEnvironment()
+	config.ValidateEnvironment(setup)
 
 	// Setup a new SynchroDB node
 	if *setup {
+		// Check if any other flags are set
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name != "debug" && f.Name != "d" && f.Name != "setup" && f.Name != "s" {
+				logger.Warnf("Flag -%s is ignored when -setup is used", f.Name)
+			}
+		})
 		Setup(config)
 	}
 
@@ -128,7 +141,7 @@ func ParseFlags() Config {
 	if *registerUser {
 		RegisterUser(registerUsername, registerPassword, config.EncryptionKey, config.CredentialFilePath)
 	} else if *registerUsername != "" || *registerPassword != "" {
-		fmt.Println("Error: -ru and -rp flags must be used with -r flag")
+		logger.Error("-ru and -rp flags must be used with -r flag")
 		os.Exit(1)
 	}
 
@@ -153,7 +166,8 @@ func ParseFlags() Config {
 
 func Setup(config Config) {
 	if _, err := os.Stat(config.CredentialFilePath); err == nil {
-		fmt.Println("Error: Credential file already exists. Please remove the existing file or choose a different path")
+		logger.Error("Credential file already exists. Please remove the existing file or choose a different path")
+		logger.Warn("Setup might've already been run, please check the credential file")
 		os.Exit(1)
 	} else {
 		logger.Infof("Creating new credential file at %s", config.CredentialFilePath)
@@ -193,7 +207,7 @@ func Setup(config Config) {
 
 func RegisterUser(registerUsername *string, registerPassword *string, encryptionKey []byte, credential_file_path string) {
 	if *registerUsername == "" || *registerPassword == "" {
-		fmt.Println("Error: Username and password must be provided for registration")
+		logger.Error("Username and password must be provided for registration")
 		os.Exit(1)
 	}
 
