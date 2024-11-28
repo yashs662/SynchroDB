@@ -1,27 +1,33 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
-	"strings"
+	"time"
 
-	"github.com/yashs662/SynchroDB/internal/kv_store"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/yashs662/SynchroDB/internal/logger"
+	"github.com/yashs662/SynchroDB/internal/stores"
 )
 
 type Handlers struct {
-	Store *kv_store.Store
+	Store     *stores.KVStore
+	JwtSecret string
 }
 
-func NewHandlers(store *kv_store.Store) *Handlers {
-	return &Handlers{Store: store}
+func NewHandlers(store *stores.KVStore, jwtSecret string) *Handlers {
+	return &Handlers{
+		Store:     store,
+		JwtSecret: jwtSecret,
+	}
 }
 
 func (h *Handlers) SetupRoutes() {
-	http.Handle("/get", loggingMiddleware(http.HandlerFunc(h.Get)))
-	http.Handle("/set", loggingMiddleware(http.HandlerFunc(h.Set)))
-	http.Handle("/delete", loggingMiddleware(http.HandlerFunc(h.Delete)))
+	http.Handle("/get", loggingMiddleware(h.JWTAuthMiddleware(http.HandlerFunc(h.Get))))
+	http.Handle("/set", loggingMiddleware(h.JWTAuthMiddleware(http.HandlerFunc(h.Set))))
+	http.Handle("/delete", loggingMiddleware(h.JWTAuthMiddleware(http.HandlerFunc(h.Delete))))
+	http.Handle("/login", loggingMiddleware(http.HandlerFunc(h.Login)))
 }
 
 func (h *Handlers) getParam(r *http.Request, key string) (string, error) {
@@ -32,22 +38,50 @@ func (h *Handlers) getParam(r *http.Request, key string) (string, error) {
 	return value, nil
 }
 
-func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
+func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-		// Check for X-Forwarded-For header for proxies
-		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			ips := strings.Split(forwarded, ",")
-			ip = strings.TrimSpace(ips[0])
-		}
+	var creds struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
 
-		logger.Infof("Request: %s %s from IP: %s", r.Method, r.URL.Path, ip)
-		next.ServeHTTP(w, r)
-	})
+	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	// hash the password
+	// compare with stored hash
+	// if match, generate token
+	// return token
+
+	hashedPassword, exists := h.Store.Get(creds.Username)
+	if !exists {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	if hashedPassword != creds.Password {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	claims := &jwt.StandardClaims{
+		ExpiresAt: time.Now().Add(time.Hour * 72).Unix(),
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	tokenString, err := token.SignedString([]byte(h.JwtSecret))
+	if err != nil {
+		http.Error(w, "Could not generate token", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write([]byte(tokenString))
 }
 
 func (h *Handlers) Get(w http.ResponseWriter, r *http.Request) {

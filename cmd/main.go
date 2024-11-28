@@ -9,8 +9,8 @@ import (
 
 	"github.com/yashs662/SynchroDB/internal/api"
 	"github.com/yashs662/SynchroDB/internal/config"
-	"github.com/yashs662/SynchroDB/internal/kv_store"
 	"github.com/yashs662/SynchroDB/internal/logger"
+	"github.com/yashs662/SynchroDB/internal/stores"
 )
 
 func main() {
@@ -20,15 +20,24 @@ func main() {
 	// Parse command-line flags
 	config := config.ParseFlags()
 
+	logger.Info("Loading User Data...")
+
+	loadedCredentials, err := stores.LoadCredentials(config.EncryptionKey, config.CredentialFilePath)
+	if err != nil {
+		logger.Errorf("Error loading credentials: %v", err)
+	} else {
+		config.Credentials = *loadedCredentials
+	}
+
 	logger.Info("Starting SynchroDB...")
 
 	// Initialize the key-value store
-	store := kv_store.NewStore()
+	store := stores.NewStore()
 
 	logger.Info("Store initialized")
 
 	// Initialize API handlers
-	handlers := api.NewHandlers(store)
+	handlers := api.NewHandlers(store, config.JwtSecret)
 
 	// Set up the HTTP routes
 	handlers.SetupRoutes()

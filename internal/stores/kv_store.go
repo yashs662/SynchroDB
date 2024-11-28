@@ -1,32 +1,34 @@
-package kv_store
+package stores
 
-import "sync"
+import (
+	"sync"
+)
 
-type Store struct {
+type KVStore struct {
 	mu    sync.RWMutex
 	store map[string]string
 }
 
-func NewStore() *Store {
-	return &Store{
+func NewStore() *KVStore {
+	return &KVStore{
 		store: make(map[string]string),
 	}
 }
 
-func (s *Store) Get(key string) (string, bool) {
+func (s *KVStore) Get(key string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	value, exists := s.store[key]
 	return value, exists
 }
 
-func (s *Store) Set(key, value string) {
+func (s *KVStore) Set(key, value string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.store[key] = value
 }
 
-func (s *Store) Delete(key string) {
+func (s *KVStore) Delete(key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.store, key)
