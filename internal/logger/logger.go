@@ -2,7 +2,9 @@ package logger
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"os"
 
 	"gopkg.in/natefinch/lumberjack.v2"
 )
@@ -42,10 +44,24 @@ func initializeLoggers() {
 		Compress:   true,
 	}
 
-	infoLogger = log.New(logOutput, fmt.Sprintf("%sINFO:  %s", Green, Reset), logFlags)
-	warnLogger = log.New(logOutput, fmt.Sprintf("%sWARN:  %s", Yellow, Reset), logFlags)
-	errorLogger = log.New(logOutput, fmt.Sprintf("%sERROR: %s", Red, Reset), logFlags)
-	debugLogger = log.New(logOutput, fmt.Sprintf("%sDEBUG: %s", Blue, Reset), logFlags)
+	multiWriter := io.MultiWriter(os.Stdout, logOutput)
+
+	infoLogger = log.New(multiWriter, fmt.Sprintf("%sINFO:  %s", Green, Reset), logFlags)
+	warnLogger = log.New(multiWriter, fmt.Sprintf("%sWARN:  %s", Yellow, Reset), logFlags)
+	errorLogger = log.New(multiWriter, fmt.Sprintf("%sERROR: %s", Red, Reset), logFlags)
+	debugLogger = log.New(multiWriter, fmt.Sprintf("%sDEBUG: %s", Blue, Reset), logFlags)
+
+	// Loggers without color for file output
+	fileInfoLogger := log.New(logOutput, "INFO:  ", logFlags)
+	fileWarnLogger := log.New(logOutput, "WARN:  ", logFlags)
+	fileErrorLogger := log.New(logOutput, "ERROR: ", logFlags)
+	fileDebugLogger := log.New(logOutput, "DEBUG: ", logFlags)
+
+	// Set output for each logger
+	infoLogger.SetOutput(io.MultiWriter(os.Stdout, fileInfoLogger.Writer()))
+	warnLogger.SetOutput(io.MultiWriter(os.Stdout, fileWarnLogger.Writer()))
+	errorLogger.SetOutput(io.MultiWriter(os.Stderr, fileErrorLogger.Writer()))
+	debugLogger.SetOutput(io.MultiWriter(os.Stdout, fileDebugLogger.Writer()))
 }
 
 func Info(message string) {
