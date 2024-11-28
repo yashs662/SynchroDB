@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/yashs662/SynchroDB/internal/logger"
 	"github.com/yashs662/SynchroDB/internal/stores"
 )
@@ -24,10 +24,10 @@ func NewHandlers(store *stores.KVStore, jwtSecret string) *Handlers {
 }
 
 func (h *Handlers) SetupRoutes() {
-	http.Handle("/get", loggingMiddleware(h.JWTAuthMiddleware(http.HandlerFunc(h.Get))))
-	http.Handle("/set", loggingMiddleware(h.JWTAuthMiddleware(http.HandlerFunc(h.Set))))
-	http.Handle("/delete", loggingMiddleware(h.JWTAuthMiddleware(http.HandlerFunc(h.Delete))))
-	http.Handle("/login", loggingMiddleware(http.HandlerFunc(h.Login)))
+	http.Handle("/get", rateLimitingMiddleware(loggingMiddleware(h.JWTAuthMiddleware(http.HandlerFunc(h.Get)))))
+	http.Handle("/set", rateLimitingMiddleware(loggingMiddleware(h.JWTAuthMiddleware(http.HandlerFunc(h.Set)))))
+	http.Handle("/delete", rateLimitingMiddleware(loggingMiddleware(h.JWTAuthMiddleware(http.HandlerFunc(h.Delete)))))
+	http.Handle("/login", rateLimitingMiddleware(loggingMiddleware(http.HandlerFunc(h.Login))))
 }
 
 func (h *Handlers) getParam(r *http.Request, key string) (string, error) {
@@ -65,8 +65,11 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := &jwt.StandardClaims{
-		ExpiresAt: time.Now().Add(time.Hour * 72).Unix(),
+	claims := &jwt.RegisteredClaims{
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 72)),
+		Subject:   user.Username,
+		Issuer:    "your-issuer",
+		Audience:  jwt.ClaimStrings{"your-audience"},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
@@ -77,9 +80,11 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write([]byte(tokenString))
+	// Consider optimizing the login process here
 }
 
 func (h *Handlers) Get(w http.ResponseWriter, r *http.Request) {
+	user, _ := GetUserFromContext(r.Context())
 	key, err := h.getParam(r, "key")
 	if err != nil {
 		logger.Warnf("%v", err)
@@ -92,11 +97,12 @@ func (h *Handlers) Get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Key not found", http.StatusNotFound)
 		return
 	}
-	logger.Infof("Retrieved key %s with value %s", key, value)
+	logger.Infof("User %s retrieved key %s with value %s", user.Username, key, value)
 	fmt.Fprintf(w, "Value: %s\n", value)
 }
 
 func (h *Handlers) Set(w http.ResponseWriter, r *http.Request) {
+	user, _ := GetUserFromContext(r.Context())
 	key, err := h.getParam(r, "key")
 	if err != nil {
 		logger.Warnf("%v", err)
@@ -111,11 +117,12 @@ func (h *Handlers) Set(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.Store.Set(key, value)
-	logger.Infof("Set key %s to value %s", key, value)
+	logger.Infof("User %s set key %s to value %s", user.Username, key, value)
 	fmt.Fprintf(w, "Set key %s to value %s\n", key, value)
 }
 
 func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
+	user, _ := GetUserFromContext(r.Context())
 	key, err := h.getParam(r, "key")
 	if err != nil {
 		logger.Warnf("%v", err)
@@ -124,6 +131,6 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.Store.Delete(key)
-	logger.Infof("Deleted key %s", key)
+	logger.Infof("User %s deleted key %s", user.Username, key)
 	fmt.Fprintf(w, "Deleted key %s\n", key)
 }

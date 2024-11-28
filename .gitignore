@@ -1,2 +1,3 @@
 synchrodb
 .env
+*.log

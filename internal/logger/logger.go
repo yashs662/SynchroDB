@@ -3,7 +3,8 @@ package logger
 import (
 	"fmt"
 	"log"
-	"os"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 const (
@@ -33,10 +34,18 @@ func initializeLoggers() {
 		logFlags |= log.Lshortfile // Add file name and line number
 	}
 
-	infoLogger = log.New(os.Stdout, fmt.Sprintf("%sINFO:  %s", Green, Reset), logFlags)
-	warnLogger = log.New(os.Stdout, fmt.Sprintf("%sWARN:  %s", Yellow, Reset), logFlags)
-	errorLogger = log.New(os.Stderr, fmt.Sprintf("%sERROR: %s", Red, Reset), logFlags)
-	debugLogger = log.New(os.Stdout, fmt.Sprintf("%sDEBUG: %s", Blue, Reset), logFlags)
+	logOutput := &lumberjack.Logger{
+		Filename:   "synchrodb.log",
+		MaxSize:    10, // megabytes
+		MaxBackups: 3,
+		MaxAge:     28, //days
+		Compress:   true,
+	}
+
+	infoLogger = log.New(logOutput, fmt.Sprintf("%sINFO:  %s", Green, Reset), logFlags)
+	warnLogger = log.New(logOutput, fmt.Sprintf("%sWARN:  %s", Yellow, Reset), logFlags)
+	errorLogger = log.New(logOutput, fmt.Sprintf("%sERROR: %s", Red, Reset), logFlags)
+	debugLogger = log.New(logOutput, fmt.Sprintf("%sDEBUG: %s", Blue, Reset), logFlags)
 }
 
 func Info(message string) {

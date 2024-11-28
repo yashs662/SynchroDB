@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -50,6 +51,11 @@ func (c *Config) validateConfig() {
 			}
 		}
 	}
+
+	if len(c.EncryptionKey) != 32 {
+		logger.Error("Invalid encryption key length. Must be 32 bytes")
+		os.Exit(1)
+	}
 }
 
 func (c *Config) ValidateEnvironment(setup *bool) {
@@ -82,6 +88,16 @@ func (c *Config) ValidateEnvironment(setup *bool) {
 	logger.Info("Environment checks passed")
 }
 
+func (c *Config) loadEnvOverrides() {
+	if val, exists := os.LookupEnv("SYNCHRODB_PORT"); exists {
+		c.Port = val
+	}
+	if val, exists := os.LookupEnv("SYNCHRODB_ID"); exists {
+		c.ID = val
+	}
+	// Add more overrides as needed
+}
+
 func ParseFlags() Config {
 	debug := flag.Bool("debug", false, "enable debug mode with detailed logging")
 	id := flag.String("id", "node1", "Node ID")
@@ -90,6 +106,7 @@ func ParseFlags() Config {
 	registerUser := flag.Bool("register", false, "Register a new user")
 	registerUsername := flag.String("username", "", "Username for registration")
 	registerPassword := flag.String("password", "", "Password for registration")
+	registerRole := flag.String("role", "admin", "Role for registration (admin, read-only, write-only, read-and-write)")
 	setup := flag.Bool("setup", false, "Setup a new SynchroDB node")
 	flag.BoolVar(debug, "d", false, "enable debug mode with detailed logging (shorthand)")
 	flag.StringVar(id, "i", "node1", "Node ID (shorthand)")
@@ -98,6 +115,7 @@ func ParseFlags() Config {
 	flag.BoolVar(registerUser, "r", false, "Register a new user (shorthand)")
 	flag.StringVar(registerUsername, "ru", "", "Username for registration (shorthand)")
 	flag.StringVar(registerPassword, "rp", "", "Password for registration (shorthand)")
+	flag.StringVar(registerRole, "rr", "admin", "Role for registration (shorthand)")
 	flag.BoolVar(setup, "s", false, "Setup a new SynchroDB node (shorthand)")
 	flag.Parse()
 
@@ -124,6 +142,7 @@ func ParseFlags() Config {
 		EncryptionKey:      encryptionKey,
 	}
 
+	config.loadEnvOverrides()
 	config.ValidateEnvironment(setup)
 
 	// Setup a new SynchroDB node
@@ -139,7 +158,12 @@ func ParseFlags() Config {
 
 	// Register a new user
 	if *registerUser {
-		RegisterUser(registerUsername, registerPassword, config.EncryptionKey, config.CredentialFilePath)
+		role, err := parseRole(*registerRole)
+		if err != nil {
+			logger.Error(err.Error())
+			os.Exit(1)
+		}
+		RegisterUser(registerUsername, registerPassword, role, config.EncryptionKey, config.CredentialFilePath)
 	} else if *registerUsername != "" || *registerPassword != "" {
 		logger.Error("-ru and -rp flags must be used with -r flag")
 		os.Exit(1)
@@ -162,6 +186,21 @@ func ParseFlags() Config {
 	}
 
 	return config
+}
+
+func parseRole(role string) (stores.Role, error) {
+	switch role {
+	case "admin":
+		return stores.Admin, nil
+	case "read-only":
+		return stores.ReadOnly, nil
+	case "write-only":
+		return stores.WriteOnly, nil
+	case "read-and-write":
+		return stores.ReadAndWrite, nil
+	default:
+		return stores.Admin, fmt.Errorf("invalid role: %s", role)
+	}
 }
 
 func Setup(config Config) {
@@ -188,7 +227,7 @@ func Setup(config Config) {
 
 	emptyCredentials := stores.CredentialStore{}
 
-	err := emptyCredentials.AddUser("admin", "password", "admin")
+	err := emptyCredentials.AddUser("admin", "password", stores.Admin)
 	if err != nil {
 		logger.Errorf("Error adding user: %v", err)
 		os.Exit(1)
@@ -205,7 +244,7 @@ func Setup(config Config) {
 	os.Exit(0)
 }
 
-func RegisterUser(registerUsername *string, registerPassword *string, encryptionKey []byte, credential_file_path string) {
+func RegisterUser(registerUsername *string, registerPassword *string, role stores.Role, encryptionKey []byte, credential_file_path string) {
 	if *registerUsername == "" || *registerPassword == "" {
 		logger.Error("Username and password must be provided for registration")
 		os.Exit(1)
@@ -217,7 +256,7 @@ func RegisterUser(registerUsername *string, registerPassword *string, encryption
 		os.Exit(1)
 	}
 
-	err = loadedCredentials.AddUser(*registerUsername, *registerPassword, "admin")
+	err = loadedCredentials.AddUser(*registerUsername, *registerPassword, role)
 	if err != nil {
 		logger.Errorf("Error adding user: %v", err)
 		os.Exit(1)
@@ -229,6 +268,6 @@ func RegisterUser(registerUsername *string, registerPassword *string, encryption
 		os.Exit(1)
 	}
 
-	logger.Infof("User %s registered successfully", *registerUsername)
+	logger.Infof("User %s registered successfully with role %s", *registerUsername, role.String())
 	os.Exit(0)
 }

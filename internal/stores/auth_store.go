@@ -19,18 +19,42 @@ import (
 
 // Parameters for Argon2 hashing
 const (
-	saltLength  = 16 // 128 bits
-	timeCost    = 1
-	memoryCost  = 64 * 1024 // 64 MB
-	parallelism = 1
+	saltLength  = 16         // 128 bits
+	timeCost    = 3          // Increase time cost for better security
+	memoryCost  = 128 * 1024 // 128 MB
+	parallelism = 2
 	keyLength   = 32 // 256 bits
 )
+
+type Role int
+
+const (
+	Admin Role = iota
+	ReadOnly
+	WriteOnly
+	ReadAndWrite
+)
+
+func (r Role) String() string {
+	switch r {
+	case Admin:
+		return "admin"
+	case ReadOnly:
+		return "read-only"
+	case WriteOnly:
+		return "write-only"
+	case ReadAndWrite:
+		return "read-and-write"
+	default:
+		return "unknown"
+	}
+}
 
 // User structure that stores username, hashed password, and role
 type User struct {
 	Username       string `json:"username"`
 	HashedPassword string `json:"hashed_password"`
-	Role           string `json:"role"` // admin, read-only, write-only
+	Role           Role   `json:"role"`
 }
 
 // CredentialStore holds a list of users
@@ -114,7 +138,7 @@ func Decrypt(ciphertext, key []byte) ([]byte, error) {
 }
 
 // AddUser adds a new user to the credential store
-func (cs *CredentialStore) AddUser(username, password, role string) error {
+func (cs *CredentialStore) AddUser(username, password string, role Role) error {
 	// Check if the username already exists
 	for _, user := range cs.Users {
 		if user.Username == username {
@@ -146,6 +170,17 @@ func (cs *CredentialStore) UpdateUser(username, newPassword string) error {
 				return err
 			}
 			cs.Users[i].HashedPassword = hashedPassword
+			return nil
+		}
+	}
+	return fmt.Errorf("user not found: %s", username)
+}
+
+// RemoveUser removes a user from the credential store
+func (cs *CredentialStore) RemoveUser(username string) error {
+	for i, user := range cs.Users {
+		if user.Username == username {
+			cs.Users = append(cs.Users[:i], cs.Users[i+1:]...)
 			return nil
 		}
 	}

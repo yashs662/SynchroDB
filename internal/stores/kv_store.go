@@ -6,31 +6,35 @@ import (
 
 type KVStore struct {
 	mu          sync.RWMutex
-	store       map[string]string
+	store       sync.Map
 	Credentials CredentialStore
 }
 
 func NewStore() *KVStore {
-	return &KVStore{
-		store: make(map[string]string),
-	}
+	return &KVStore{}
 }
 
 func (s *KVStore) Get(key string) (string, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	value, exists := s.store[key]
-	return value, exists
+	value, exists := s.store.Load(key)
+	if !exists {
+		return "", false
+	}
+	return value.(string), true
 }
 
 func (s *KVStore) Set(key, value string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.store[key] = value
+	s.store.Store(key, value)
 }
 
 func (s *KVStore) Delete(key string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.store, key)
+	s.store.Delete(key)
+}
+
+func (s *KVStore) GetAllKeys() []string {
+	keys := []string{}
+	s.store.Range(func(key, value interface{}) bool {
+		keys = append(keys, key.(string))
+		return true
+	})
+	return keys
 }
