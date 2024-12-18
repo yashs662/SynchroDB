@@ -97,8 +97,7 @@ func (h *Handlers) Get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Key not found", http.StatusNotFound)
 		return
 	}
-	logger.Infof("User %s retrieved key %s with value %s", user.Username, key, value)
-	fmt.Fprintf(w, "Value: %s\n", value)
+	logger.Infof("User <%s> retrieved key <%s> with value <%s>", user.Username, key, value)
 }
 
 func (h *Handlers) Set(w http.ResponseWriter, r *http.Request) {
@@ -117,8 +116,7 @@ func (h *Handlers) Set(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.Store.Set(key, value)
-	logger.Infof("User %s set key %s to value %s", user.Username, key, value)
-	fmt.Fprintf(w, "Set key %s to value %s\n", key, value)
+	logger.Infof("User <%s> set key <%s> to value <%s", user.Username, key, value)
 }
 
 func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +129,5 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.Store.Delete(key)
-	logger.Infof("User %s deleted key %s", user.Username, key)
-	fmt.Fprintf(w, "Deleted key %s\n", key)
+	logger.Infof("User <%s> deleted key <%s>", user.Username, key)
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
@@ -51,11 +52,6 @@ func (c *Config) validateConfig() {
 			}
 		}
 	}
-
-	if len(c.EncryptionKey) != 32 {
-		logger.Error("Invalid encryption key length. Must be 32 bytes")
-		os.Exit(1)
-	}
 }
 
 func (c *Config) ValidateEnvironment(setup *bool) {
@@ -64,6 +60,11 @@ func (c *Config) ValidateEnvironment(setup *bool) {
 
 	if c.JwtSecret == "" {
 		logger.Errorf("SYNCHRODB_JWT_SECRET environment variable not set")
+		os.Exit(1)
+	}
+
+	if len(c.JwtSecret) < 32 {
+		logger.Errorf("SYNCHRODB_JWT_SECRET must be at least 32 characters long")
 		os.Exit(1)
 	}
 
@@ -83,6 +84,11 @@ func (c *Config) ValidateEnvironment(setup *bool) {
 	if c.EncryptionKey == nil {
 		logger.Errorf("SYNCHRODB_ENCRYPTION_KEY environment variable not set")
 		os.Exit(1)
+	} else {
+		if len(c.EncryptionKey) != 32 {
+			logger.Error("Invalid encryption key length. Must be 32 bytes")
+			os.Exit(1)
+		}
 	}
 
 	logger.Info("Environment checks passed")
@@ -108,15 +114,17 @@ func ParseFlags() Config {
 	registerPassword := flag.String("password", "", "Password for registration")
 	registerRole := flag.String("role", "admin", "Role for registration (admin, read-only, write-only, read-and-write)")
 	setup := flag.Bool("setup", false, "Setup a new SynchroDB node")
+	reset := flag.Bool("reset", false, "Reset the credential store")
 	flag.BoolVar(debug, "d", false, "enable debug mode with detailed logging (shorthand)")
 	flag.StringVar(id, "i", "node1", "Node ID (shorthand)")
 	flag.StringVar(peers, "p", "", "Comma-separated list of peer addresses (shorthand)")
 	flag.StringVar(port, "P", "8001", "Port to run the server on (shorthand)")
-	flag.BoolVar(registerUser, "r", false, "Register a new user (shorthand)")
+	flag.BoolVar(registerUser, "R", false, "Register a new user (shorthand)")
 	flag.StringVar(registerUsername, "ru", "", "Username for registration (shorthand)")
 	flag.StringVar(registerPassword, "rp", "", "Password for registration (shorthand)")
 	flag.StringVar(registerRole, "rr", "admin", "Role for registration (shorthand)")
 	flag.BoolVar(setup, "s", false, "Setup a new SynchroDB node (shorthand)")
+	flag.BoolVar(reset, "r", false, "Reset the credential store (shorthand)")
 	flag.Parse()
 
 	// Load environment variables from .env file
@@ -154,6 +162,11 @@ func ParseFlags() Config {
 			}
 		})
 		Setup(config)
+	}
+
+	// Reset the credential store
+	if *reset {
+		ResetCredentials(config)
 	}
 
 	// Register a new user
@@ -269,5 +282,37 @@ func RegisterUser(registerUsername *string, registerPassword *string, role store
 	}
 
 	logger.Infof("User %s registered successfully with role %s", *registerUsername, role.String())
+	os.Exit(0)
+}
+
+func ResetCredentials(config Config) {
+	reader := bufio.NewReader(os.Stdin)
+	logger.Warn("Are you sure you want to reset the credential store? This action cannot be undone. (yes/no): ")
+	response, _ := reader.ReadString('\n')
+	response = strings.TrimSpace(response)
+
+	if response != "yes" && response != "y" {
+		logger.Info("Reset action aborted by user")
+		os.Exit(0)
+	}
+
+	logger.Warn("Resetting the credential store...")
+
+	emptyCredentials := stores.CredentialStore{}
+
+	err := emptyCredentials.AddUser("admin", "password", stores.Admin)
+	if err != nil {
+		logger.Errorf("Error adding user: %v", err)
+		os.Exit(1)
+	}
+
+	err = stores.SaveCredentials(&emptyCredentials, config.EncryptionKey, config.CredentialFilePath)
+	if err != nil {
+		logger.Errorf("Error saving credentials: %v", err)
+		os.Exit(1)
+	}
+
+	logger.Info("Credential store reset complete")
+	logger.Warn("Please change the default password for the admin user, it is recommended to use a strong password")
 	os.Exit(0)
 }
