@@ -1,3 +1,4 @@
 synchrodb
 .env
 *.log
+*.pem

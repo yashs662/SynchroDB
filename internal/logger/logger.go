@@ -1,11 +1,14 @@
 package logger
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
 
+	"github.com/yashs662/SynchroDB/internal/config"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -25,19 +28,19 @@ var (
 	debugMode   bool
 )
 
-func Init(debug bool) {
-	debugMode = debug
-	initializeLoggers()
+func Init(config *config.Config) {
+	debugMode = config.Log.Debug
+	initializeLoggers(config.Log.File)
 }
 
-func initializeLoggers() {
+func initializeLoggers(logFile string) {
 	logFlags := log.Ldate | log.Ltime | log.Lmicroseconds
 	if debugMode {
 		logFlags |= log.Lshortfile // Add file name and line number
 	}
 
 	logOutput := &lumberjack.Logger{
-		Filename:   "synchrodb.log",
+		Filename:   logFile,
 		MaxSize:    10, // megabytes
 		MaxBackups: 3,
 		MaxAge:     28, //days
@@ -100,7 +103,17 @@ func Debugf(format string, v ...interface{}) {
 	}
 }
 
+func StructuredInfo(fields map[string]interface{}) {
+	jsonLog, _ := json.Marshal(fields)
+	infoLogger.Println(string(jsonLog))
+}
+
+func InfoWithContext(ctx context.Context, message string) {
+	requestID := ctx.Value("requestID") // Retrieve context value
+	infoLogger.Printf("[RequestID: %v] %s", requestID, message)
+}
+
 func SetDebugMode(debug bool) {
 	debugMode = debug
-	initializeLoggers()
+	initializeLoggers("synchrodb.log")
 }

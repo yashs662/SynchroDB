@@ -1,0 +1,7 @@
+server:
+  address: "127.0.0.1:8000"
+  password: "synchrodb_test_password"
+
+log:
+  file: "synchrodb.log"
+  debug: true

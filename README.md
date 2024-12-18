@@ -10,7 +10,7 @@ SynchroDB/
 │   ├── cli/                    # Command-line client for interacting with the database
 │   │   └── main.go
 │   └── server/                 # Main binary for running the database server
-│      └── main.go
+│       └── main.go
 ├── internal/                   # Private application-specific utilities
 │   ├── logger/                 # Logging utilities
 │   │   └── logger.go
@@ -44,4 +44,21 @@ SynchroDB/
 ├── Dockerfile                  # Dockerfile for containerizing the database
 ├── Makefile                    # Makefile for build, test, and run tasks
 └── README.md                   # Documentation for the project
+```
+
+# Help
+
+### How to generate certificates
+
+```
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout server-key.pem -out server-cert.pem
+
+```
+
+
+### Test using openssl
+
+```
+openssl s_client -connect localhost:6379
+
 ```
