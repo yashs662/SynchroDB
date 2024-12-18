@@ -4,6 +4,7 @@ My attempt at making a distributed KV store
 
 # Proposed architechture
 
+```
 SynchroDB/
 ├── cmd/                        # Main entry points for the application
 │   ├── cli/                    # Command-line client for interacting with the database
@@ -43,3 +44,4 @@ SynchroDB/
 ├── Dockerfile                  # Dockerfile for containerizing the database
 ├── Makefile                    # Makefile for build, test, and run tasks
 └── README.md                   # Documentation for the project
+```
