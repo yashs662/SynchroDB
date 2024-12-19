@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
 
@@ -21,99 +20,131 @@ const (
 )
 
 var (
-	infoLogger  *log.Logger
-	warnLogger  *log.Logger
-	errorLogger *log.Logger
-	debugLogger *log.Logger
-	debugMode   bool
+	consoleInfoLogger  *log.Logger
+	consoleWarnLogger  *log.Logger
+	consoleErrorLogger *log.Logger
+	consoleFatalLogger *log.Logger
+	consoleDebugLogger *log.Logger
+
+	fileInfoLogger  *log.Logger
+	fileWarnLogger  *log.Logger
+	fileErrorLogger *log.Logger
+	fileFatalLogger *log.Logger
+	fileDebugLogger *log.Logger
+
+	debugMode bool
 )
 
-func Init(config *config.Config) {
-	debugMode = config.Log.Debug
-	initializeLoggers(config.Log.File)
+func Init(cfg *config.Config) {
+	debugMode = cfg.Log.Debug
+	initializeLoggers(cfg.Log.File)
+	if debugMode {
+		configJSON, _ := json.MarshalIndent(cfg, "", "  ")
+		Debugf("Loaded configuration: %s", configJSON)
+	}
 }
 
 func initializeLoggers(logFile string) {
-	logFlags := log.Ldate | log.Ltime | log.Lmicroseconds
+	logFlags := log.Ldate | log.Ltime
 	if debugMode {
-		logFlags |= log.Lshortfile // Add file name and line number
+		logFlags |= log.Lmicroseconds
 	}
 
-	logOutput := &lumberjack.Logger{
+	// File logger: Plain text, no colors
+	fileOutput := &lumberjack.Logger{
 		Filename:   logFile,
 		MaxSize:    10, // megabytes
 		MaxBackups: 3,
-		MaxAge:     28, //days
+		MaxAge:     28, // days
 		Compress:   true,
 	}
+	fileInfoLogger = log.New(fileOutput, "INFO:  ", logFlags)
+	fileWarnLogger = log.New(fileOutput, "WARN:  ", logFlags)
+	fileErrorLogger = log.New(fileOutput, "ERROR: ", logFlags)
+	fileFatalLogger = log.New(fileOutput, "FATAL: ", logFlags)
+	fileDebugLogger = log.New(fileOutput, "DEBUG: ", logFlags)
 
-	multiWriter := io.MultiWriter(os.Stdout, logOutput)
-
-	infoLogger = log.New(multiWriter, fmt.Sprintf("%sINFO:  %s", Green, Reset), logFlags)
-	warnLogger = log.New(multiWriter, fmt.Sprintf("%sWARN:  %s", Yellow, Reset), logFlags)
-	errorLogger = log.New(multiWriter, fmt.Sprintf("%sERROR: %s", Red, Reset), logFlags)
-	debugLogger = log.New(multiWriter, fmt.Sprintf("%sDEBUG: %s", Blue, Reset), logFlags)
-
-	// Loggers without color for file output
-	fileInfoLogger := log.New(logOutput, "INFO:  ", logFlags)
-	fileWarnLogger := log.New(logOutput, "WARN:  ", logFlags)
-	fileErrorLogger := log.New(logOutput, "ERROR: ", logFlags)
-	fileDebugLogger := log.New(logOutput, "DEBUG: ", logFlags)
-
-	// Set output for each logger
-	infoLogger.SetOutput(io.MultiWriter(os.Stdout, fileInfoLogger.Writer()))
-	warnLogger.SetOutput(io.MultiWriter(os.Stdout, fileWarnLogger.Writer()))
-	errorLogger.SetOutput(io.MultiWriter(os.Stderr, fileErrorLogger.Writer()))
-	debugLogger.SetOutput(io.MultiWriter(os.Stdout, fileDebugLogger.Writer()))
+	// Console logger: Colored output
+	consoleInfoLogger = log.New(os.Stdout, fmt.Sprintf("%sINFO:  %s", Green, Reset), logFlags)
+	consoleWarnLogger = log.New(os.Stdout, fmt.Sprintf("%sWARN:  %s", Yellow, Reset), logFlags)
+	consoleErrorLogger = log.New(os.Stderr, fmt.Sprintf("%sERROR: %s", Red, Reset), logFlags)
+	consoleFatalLogger = log.New(os.Stderr, fmt.Sprintf("%sFATAL: %s", Red, Reset), logFlags)
+	consoleDebugLogger = log.New(os.Stdout, fmt.Sprintf("%sDEBUG: %s", Blue, Reset), logFlags)
 }
 
 func Info(message string) {
-	infoLogger.Println(message)
+	consoleInfoLogger.Println(message)
+	fileInfoLogger.Println(message)
 }
 
 func Warn(message string) {
-	warnLogger.Println(message)
+	consoleWarnLogger.Println(message)
+	fileWarnLogger.Println(message)
 }
 
 func Error(message string) {
-	errorLogger.Println(message)
+	consoleErrorLogger.Println(message)
+	fileErrorLogger.Println(message)
+}
+
+func Fatal(message string) {
+	consoleFatalLogger.Fatalln(message)
+	fileFatalLogger.Fatalln(message)
 }
 
 func Debug(message string) {
 	if debugMode {
-		debugLogger.Println(message)
+		consoleDebugLogger.Println(message)
+		fileDebugLogger.Println(message)
 	}
 }
 
 func Infof(format string, v ...interface{}) {
-	infoLogger.Printf(format, v...)
+	msg := fmt.Sprintf(format, v...)
+	consoleInfoLogger.Println(msg)
+	fileInfoLogger.Println(msg)
 }
 
 func Warnf(format string, v ...interface{}) {
-	warnLogger.Printf(format, v...)
+	msg := fmt.Sprintf(format, v...)
+	consoleWarnLogger.Println(msg)
+	fileWarnLogger.Println(msg)
 }
 
 func Errorf(format string, v ...interface{}) {
-	errorLogger.Printf(format, v...)
+	msg := fmt.Sprintf(format, v...)
+	consoleErrorLogger.Println(msg)
+	fileErrorLogger.Println(msg)
+}
+
+func Fatalf(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	consoleFatalLogger.Fatalln(msg)
+	fileFatalLogger.Fatalln(msg)
 }
 
 func Debugf(format string, v ...interface{}) {
 	if debugMode {
-		debugLogger.Printf(format, v...)
+		msg := fmt.Sprintf(format, v...)
+		consoleDebugLogger.Println(msg)
+		fileDebugLogger.Println(msg)
 	}
 }
 
 func StructuredInfo(fields map[string]interface{}) {
 	jsonLog, _ := json.Marshal(fields)
-	infoLogger.Println(string(jsonLog))
+	Info(string(jsonLog))
 }
 
 func InfoWithContext(ctx context.Context, message string) {
-	requestID := ctx.Value("requestID") // Retrieve context value
-	infoLogger.Printf("[RequestID: %v] %s", requestID, message)
+	requestID := ctx.Value("requestID")
+	if requestID != nil {
+		Infof("[RequestID: %v] %s", requestID, message)
+	} else {
+		Info(message)
+	}
 }
 
 func SetDebugMode(debug bool) {
 	debugMode = debug
-	initializeLoggers("synchrodb.log")
 }

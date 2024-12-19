@@ -9,9 +9,11 @@ import (
 
 type Config struct {
 	Server struct {
-		Address     string `yaml:"address"`
-		Password    string `yaml:"password"`
-		AuthEnabled bool   `yaml:"auth_enabled"`
+		Address            string `yaml:"address"`
+		Password           string `yaml:"password"`
+		AuthEnabled        bool   `yaml:"auth_enabled"`
+		PersistentAOFPath  string `yaml:"persistent_aof_path"`
+		ReplayAOFOnStartup bool   `yaml:"replay_aof_on_startup"`
 	} `yaml:"server"`
 	Log struct {
 		File  string `yaml:"file"`

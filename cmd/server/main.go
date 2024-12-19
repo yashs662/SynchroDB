@@ -15,7 +15,7 @@ import (
 func main() {
 	config, err := config.LoadConfig()
 	if err != nil {
-		fmt.Println("ERROR: " + err.Error())
+		fmt.Println("FATAL: " + err.Error())
 		os.Exit(1)
 	}
 
@@ -30,7 +30,7 @@ func main() {
 	go func() {
 		// Start the protocol server
 		if err := protocol.StartServer(config); err != nil {
-			logger.Error("Failed to start the server: " + err.Error())
+			logger.Fatal("Failed to start the server: " + err.Error())
 			os.Exit(1)
 		}
 	}()

@@ -6,8 +6,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/yashs662/SynchroDB/internal/config"
 	"github.com/yashs662/SynchroDB/internal/logger"
@@ -21,12 +24,37 @@ var (
 	authEnabled          bool
 	dbPassword           string
 	store                = database.NewKVStore()
+	aofWriter            *database.AOFWriter
+	persistenceEnabled   bool
 )
 
 func StartServer(config *config.Config) error {
 
 	authEnabled = config.Server.AuthEnabled
 	dbPassword = config.Server.Password
+	aofFilePath := config.Server.PersistentAOFPath
+	if aofFilePath != "" {
+		var err error
+		aofWriter, err = database.NewAOFWriter(aofFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to create AOF writer: %w", err)
+		}
+		persistenceEnabled = true
+
+		if config.Server.ReplayAOFOnStartup {
+			file, err := os.Open(aofFilePath)
+			if err != nil {
+				logger.Warnf("Failed to open AOF file: %v", err)
+			} else {
+				defer file.Close()
+				store.LoadFromAOF(aofFilePath)
+			}
+		}
+
+		defer aofWriter.Close()
+	} else {
+		logger.Warn("Persistence is disabled because the file path is empty in the config")
+	}
 
 	cert, err := tls.LoadX509KeyPair("server-cert.pem", "server-key.pem")
 	if err != nil {
@@ -131,18 +159,39 @@ func handleCommand(conn net.Conn, command string) string {
 		return handleGet(parts[1:])
 	case "DEL":
 		return handleDel(parts[1:])
+	case "EXPIRE":
+		return handleExpire(parts[1:])
+	case "TTL":
+		return handleTTL(parts[1:])
 	default:
 		return "ERR unknown command"
 	}
 }
 
 func handleSet(args []string) string {
-	if len(args) != 2 {
+	if len(args) < 2 {
 		return "ERR wrong number of arguments for 'SET' command"
 	}
 	key, value := args[0], args[1]
-	store.Set(key, value)
-	return "OK"
+	// check if TTL is provided
+	if len(args) == 4 && args[2] == "EX" {
+		ttl, err := strconv.Atoi(args[3])
+		if err != nil || ttl <= 0 {
+			return "ERR invalid TTL"
+		}
+		store.SetWithTTL(key, value, time.Duration(ttl)*time.Second)
+		if persistenceEnabled {
+			aofWriter.Write(fmt.Sprintf("SET %s %s EX %d", key, value, ttl))
+		}
+		return "OK"
+	} else if len(args) == 2 {
+		store.Set(key, value)
+		if persistenceEnabled {
+			aofWriter.Write(fmt.Sprintf("SET %s %s", key, value))
+		}
+		return "OK"
+	}
+	return "ERR invalid arguments for 'SET' command"
 }
 
 func handleGet(args []string) string {
@@ -163,6 +212,9 @@ func handleDel(args []string) string {
 	}
 	key := args[0]
 	if store.Del(key) {
+		if persistenceEnabled {
+			aofWriter.Write(fmt.Sprintf("DEL %s", key))
+		}
 		return "OK"
 	}
 	return "nil"
@@ -178,4 +230,34 @@ func handleAuth(conn net.Conn, args []string) string {
 		return "OK"
 	}
 	return "ERR invalid password"
+}
+
+func handleExpire(args []string) string {
+	if len(args) != 2 {
+		return "ERR wrong number of arguments for 'EXPIRE' command"
+	}
+	key := args[0]
+	ttl, err := strconv.Atoi(args[1])
+	if err != nil || ttl <= 0 {
+		return "ERR invalid TTL"
+	}
+	if store.SetExpire(key, ttl) {
+		return "OK"
+	}
+	return "ERR key does not exist"
+}
+
+func handleTTL(args []string) string {
+	if len(args) != 1 {
+		return "ERR wrong number of arguments for 'TTL' command"
+	}
+	key := args[0]
+	ttl := store.TTL(key)
+	if ttl == -2 {
+		return "-2"
+	} else if ttl == -1 {
+		return "-1"
+	} else {
+		return fmt.Sprintf("%ds", ttl)
+	}
 }

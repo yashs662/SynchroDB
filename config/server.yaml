@@ -1,6 +1,9 @@
 server:
   address: "127.0.0.1:8000"
   password: "synchrodb_test_password"
+  persistent_aof_path: "synchrodb.aof"
+  auth_enabled: true
+  replay_aof_on_startup: true
 
 log:
   file: "synchrodb.log"

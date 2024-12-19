@@ -2,3 +2,4 @@ synchrodb
 .env
 *.log
 *.pem
+*.aof
