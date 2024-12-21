@@ -2,6 +2,7 @@ package database
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/yashs662/SynchroDB/internal/logger"
+	"github.com/yashs662/SynchroDB/internal/utils"
 )
 
 type KVStore struct {
@@ -185,4 +187,57 @@ func (store *KVStore) LoadFromAOF(filepath string) error {
 	logger.Info("AOF replay completed")
 
 	return scanner.Err()
+}
+
+func (store *KVStore) FlushDB() {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.data = make(map[string]string)
+	store.expirations = make(map[string]time.Time)
+}
+
+func (store *KVStore) Keys(pattern string) []string {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	keys := []string{}
+	for key := range store.data {
+		if utils.MatchPattern(key, pattern) {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+func (store *KVStore) Incr(key string) (int, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	value, exists := store.data[key]
+	if !exists {
+		store.data[key] = "1"
+		return 1, nil
+	}
+	intValue, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("value is not an integer")
+	}
+	intValue++
+	store.data[key] = strconv.Itoa(intValue)
+	return intValue, nil
+}
+
+func (store *KVStore) Decr(key string) (int, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	value, exists := store.data[key]
+	if !exists {
+		store.data[key] = "-1"
+		return -1, nil
+	}
+	intValue, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, fmt.Errorf("value is not an integer")
+	}
+	intValue--
+	store.data[key] = strconv.Itoa(intValue)
+	return intValue, nil
 }

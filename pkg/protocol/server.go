@@ -148,7 +148,7 @@ func handleCommand(conn net.Conn, command string) string {
 		return "ERR invalid command"
 	}
 
-	switch parts[0] {
+	switch strings.ToUpper(parts[0]) {
 	case "AUTH":
 		return handleAuth(conn, parts[1:])
 	case "PING":
@@ -163,6 +163,14 @@ func handleCommand(conn net.Conn, command string) string {
 		return handleExpire(parts[1:])
 	case "TTL":
 		return handleTTL(parts[1:])
+	case "FLUSHDB":
+		return handleFlushDB(store)
+	case "KEYS":
+		return handleKeys(parts[1:], store)
+	case "INCR":
+		return handleIncr(parts[1:], store)
+	case "DECR":
+		return handleDecr(parts[1:], store)
 	default:
 		return "ERR unknown command"
 	}
@@ -260,4 +268,42 @@ func handleTTL(args []string) string {
 	} else {
 		return fmt.Sprintf("%ds", ttl)
 	}
+}
+
+func handleFlushDB(store *database.KVStore) string {
+	store.FlushDB()
+	return "OK"
+}
+
+func handleKeys(args []string, store *database.KVStore) string {
+	if len(args) < 1 {
+		return "ERR missing pattern"
+	}
+	pattern := args[0]
+	keys := store.Keys(pattern)
+	return strings.Join(keys, " ")
+}
+
+func handleIncr(args []string, store *database.KVStore) string {
+	if len(args) < 1 {
+		return "ERR missing key"
+	}
+	key := args[0]
+	value, err := store.Incr(key)
+	if err != nil {
+		return fmt.Sprintf("ERR %v", err)
+	}
+	return strconv.Itoa(value)
+}
+
+func handleDecr(args []string, store *database.KVStore) string {
+	if len(args) < 1 {
+		return "ERR missing key"
+	}
+	key := args[0]
+	value, err := store.Decr(key)
+	if err != nil {
+		return fmt.Sprintf("ERR %v", err)
+	}
+	return strconv.Itoa(value)
 }
