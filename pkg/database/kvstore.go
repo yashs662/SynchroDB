@@ -3,6 +3,7 @@ package database
 import (
 	"bufio"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -12,6 +13,27 @@ import (
 	"github.com/yashs662/SynchroDB/internal/logger"
 	"github.com/yashs662/SynchroDB/internal/utils"
 )
+
+type Command interface {
+	Execute(conn net.Conn, args []string) string
+	Replay(args []string, store *KVStore) error
+}
+type CommandRegistry struct {
+	commands map[string]Command
+}
+
+func NewCommandRegistry() *CommandRegistry {
+	return &CommandRegistry{commands: make(map[string]Command)}
+}
+
+func (r *CommandRegistry) Register(name string, cmd Command) {
+	r.commands[strings.ToUpper(name)] = cmd
+}
+
+func (r *CommandRegistry) Get(name string) (Command, bool) {
+	cmd, exists := r.commands[strings.ToUpper(name)]
+	return cmd, exists
+}
 
 type KVStore struct {
 	data        map[string]string
@@ -108,7 +130,7 @@ func (store *KVStore) cleanupExpiredKeys() {
 	}
 }
 
-func (store *KVStore) LoadFromAOF(filepath string) error {
+func (store *KVStore) LoadFromAOF(filepath string, commandRegistry *CommandRegistry) error {
 	logger.Infof("Replaying AOF file: %s", filepath)
 	file, err := os.Open(filepath)
 	if err != nil {
@@ -126,7 +148,7 @@ func (store *KVStore) LoadFromAOF(filepath string) error {
 		}
 
 		// Parse timestamp and command
-		timestamp, err := strconv.ParseInt(parts[0], 10, 64)
+		_, err := strconv.ParseInt(parts[0], 10, 64)
 		if err != nil {
 			logger.Debugf("Skipping Invalid timestamp in AOF: %s", line)
 			continue // Skip invalid entries
@@ -134,53 +156,15 @@ func (store *KVStore) LoadFromAOF(filepath string) error {
 		command := parts[1]
 		args := parts[2:]
 
-		// Check if the command is still valid
-		if command == "SET" {
-			if len(args) == 2 {
-				key, value := args[0], args[1]
-				store.Set(key, value)
-			} else if len(args) == 4 && args[2] == "EX" {
-				key, value := args[0], args[1]
-				ttl, err := strconv.Atoi(args[3])
-				if err == nil {
-					store.SetWithTTL(key, value, time.Duration(ttl)*time.Second)
-				} else {
-					logger.Warnf("Invalid TTL value in AOF: %s", line)
-					logger.Warn("Ignoring the command")
-				}
-			} else {
-				logger.Warnf("Invalid SET command in AOF: %s", line)
-				logger.Warn("Ignoring the command")
-			}
-		} else if command == "EXPIRE" {
-			if len(args) != 2 {
-				logger.Warnf("Invalid EXPIRE command in AOF: %s", line)
-				logger.Warn("Ignoring the command")
-				continue
-			}
+		// Get the command from the registry and replay it
+		cmd, exists := commandRegistry.Get(command)
+		if !exists {
+			logger.Warnf("Unknown command in AOF: %s", line)
+			continue
+		}
 
-			key := args[0]
-			ttl, err := strconv.Atoi(args[1])
-			if err == nil {
-				expiration := time.Unix(timestamp, 0).Add(time.Duration(ttl) * time.Second)
-				if time.Now().Before(expiration) {
-					value, exists := store.data[key]
-					if !exists {
-						logger.Warnf("Key %s does not exist for EXPIRE command in AOF: %s", key, line)
-						logger.Warn("Ignoring the command")
-						continue
-					}
-					remainingTTL := time.Until(expiration)
-					store.SetWithTTL(key, value, remainingTTL)
-				}
-			}
-		} else if command == "DEL" {
-			if len(args) != 1 {
-				logger.Warnf("Invalid DEL command in AOF: %s", line)
-				logger.Warn("Ignoring the command")
-				continue
-			}
-			store.Del(args[0])
+		if err := cmd.Replay(args, store); err != nil {
+			logger.Warnf("Failed to replay command in AOF: %s, error: %v", line, err)
 		}
 	}
 

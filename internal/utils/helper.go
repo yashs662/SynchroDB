@@ -1,10 +1,17 @@
 package utils
 
-import "path/filepath"
+import (
+	"strings"
+)
 
 // Helper function for pattern matching
 func MatchPattern(key, pattern string) bool {
-	// Simple glob matching; for more complex patterns, use regex if necessary in the future
-	matched, _ := filepath.Match(pattern, key)
-	return matched
+	// If the pattern contains a wildcard '*', convert it to a regex-like pattern
+	if strings.Contains(pattern, "*") {
+		// Replace '*' with '.*' to match any sequence of characters
+		regexPattern := strings.ReplaceAll(pattern, "*", ".*")
+		return strings.Contains(key, strings.Trim(regexPattern, ".*"))
+	}
+	// Otherwise, perform a simple substring check
+	return strings.Contains(key, pattern)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	"github.com/yashs662/SynchroDB/internal/config"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -33,11 +34,21 @@ var (
 	fileDebugLogger *log.Logger
 
 	debugMode bool
+	logQueue  chan logEntry
+	wg        sync.WaitGroup
 )
+
+type logEntry struct {
+	level   string
+	message string
+}
 
 func Init(cfg *config.Config) {
 	debugMode = cfg.Log.Debug
 	initializeLoggers(cfg.Log.File)
+	logQueue = make(chan logEntry, 1000)
+	wg.Add(1)
+	go processLogQueue()
 	if debugMode {
 		configJSON, _ := json.MarshalIndent(cfg, "", "  ")
 		Debugf("Loaded configuration: %s", configJSON)
@@ -72,62 +83,77 @@ func initializeLoggers(logFile string) {
 	consoleDebugLogger = log.New(os.Stdout, fmt.Sprintf("%sDEBUG: %s", Blue, Reset), logFlags)
 }
 
+func processLogQueue() {
+	defer wg.Done()
+	for entry := range logQueue {
+		switch entry.level {
+		case "INFO":
+			consoleInfoLogger.Println(entry.message)
+			fileInfoLogger.Println(entry.message)
+		case "WARN":
+			consoleWarnLogger.Println(entry.message)
+			fileWarnLogger.Println(entry.message)
+		case "ERROR":
+			consoleErrorLogger.Println(entry.message)
+			fileErrorLogger.Println(entry.message)
+		case "FATAL":
+			consoleFatalLogger.Fatalln(entry.message)
+			fileFatalLogger.Fatalln(entry.message)
+		case "DEBUG":
+			if debugMode {
+				consoleDebugLogger.Println(entry.message)
+				fileDebugLogger.Println(entry.message)
+			}
+		}
+	}
+}
+
 func Info(message string) {
-	consoleInfoLogger.Println(message)
-	fileInfoLogger.Println(message)
+	logQueue <- logEntry{level: "INFO", message: message}
 }
 
 func Warn(message string) {
-	consoleWarnLogger.Println(message)
-	fileWarnLogger.Println(message)
+	logQueue <- logEntry{level: "WARN", message: message}
 }
 
 func Error(message string) {
-	consoleErrorLogger.Println(message)
-	fileErrorLogger.Println(message)
+	logQueue <- logEntry{level: "ERROR", message: message}
 }
 
 func Fatal(message string) {
-	consoleFatalLogger.Fatalln(message)
-	fileFatalLogger.Fatalln(message)
+	logQueue <- logEntry{level: "FATAL", message: message}
 }
 
 func Debug(message string) {
 	if debugMode {
-		consoleDebugLogger.Println(message)
-		fileDebugLogger.Println(message)
+		logQueue <- logEntry{level: "DEBUG", message: message}
 	}
 }
 
 func Infof(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
-	consoleInfoLogger.Println(msg)
-	fileInfoLogger.Println(msg)
+	logQueue <- logEntry{level: "INFO", message: msg}
 }
 
 func Warnf(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
-	consoleWarnLogger.Println(msg)
-	fileWarnLogger.Println(msg)
+	logQueue <- logEntry{level: "WARN", message: msg}
 }
 
 func Errorf(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
-	consoleErrorLogger.Println(msg)
-	fileErrorLogger.Println(msg)
+	logQueue <- logEntry{level: "ERROR", message: msg}
 }
 
 func Fatalf(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
-	consoleFatalLogger.Fatalln(msg)
-	fileFatalLogger.Fatalln(msg)
+	logQueue <- logEntry{level: "FATAL", message: msg}
 }
 
 func Debugf(format string, v ...interface{}) {
 	if debugMode {
 		msg := fmt.Sprintf(format, v...)
-		consoleDebugLogger.Println(msg)
-		fileDebugLogger.Println(msg)
+		logQueue <- logEntry{level: "DEBUG", message: msg}
 	}
 }
 
@@ -147,4 +173,9 @@ func InfoWithContext(ctx context.Context, message string) {
 
 func SetDebugMode(debug bool) {
 	debugMode = debug
+}
+
+func Close() {
+	close(logQueue)
+	wg.Wait()
 }

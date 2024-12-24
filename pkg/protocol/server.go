@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,29 +16,69 @@ import (
 	"github.com/yashs662/SynchroDB/pkg/database"
 )
 
-var (
+type Server struct {
 	listener             net.Listener
 	conns                sync.Map
-	authenticatedClients = make(map[net.Conn]bool)
+	authenticatedClients map[net.Conn]bool
+	authMutex            sync.RWMutex
 	authEnabled          bool
 	dbPassword           string
-	store                = database.NewKVStore()
+	store                *database.KVStore
 	aofWriter            *database.AOFWriter
 	persistenceEnabled   bool
-)
+	commandRegistry      *database.CommandRegistry
+	connCount            int
+	connMutex            sync.Mutex
+	maxConnections       int
+	rateLimit            int
+	shutdownChan         chan struct{}
+}
 
-func StartServer(config *config.Config) error {
+func NewServer(config *config.Config, store *database.KVStore, aofWriter *database.AOFWriter) *Server {
+	server := &Server{
+		authEnabled:          config.Server.AuthEnabled,
+		dbPassword:           config.Server.Password,
+		store:                store,
+		aofWriter:            aofWriter,
+		authenticatedClients: make(map[net.Conn]bool),
+		commandRegistry:      database.NewCommandRegistry(),
+		maxConnections:       config.Server.MaxConnections,
+		rateLimit:            config.Server.RateLimit,
+		shutdownChan:         make(chan struct{}),
+	}
 
-	authEnabled = config.Server.AuthEnabled
-	dbPassword = config.Server.Password
+	// Register commands
+	server.registerCommands()
+
+	return server
+}
+
+func (s *Server) registerCommands() {
+	s.commandRegistry.Register("AUTH", &AuthCommand{server: s})
+	s.commandRegistry.Register("PING", &PingCommand{})
+	s.commandRegistry.Register("SET", &SetCommand{server: s})
+	s.commandRegistry.Register("GET", &GetCommand{server: s})
+	s.commandRegistry.Register("DEL", &DelCommand{server: s})
+	s.commandRegistry.Register("EXPIRE", &ExpireCommand{server: s})
+	s.commandRegistry.Register("TTL", &TTLCommand{server: s})
+	s.commandRegistry.Register("FLUSHDB", &FlushDBCommand{server: s})
+	s.commandRegistry.Register("KEYS", &KeysCommand{server: s})
+	s.commandRegistry.Register("INCR", &IncrCommand{server: s})
+	s.commandRegistry.Register("DECR", &DecrCommand{server: s})
+}
+
+func (s *Server) Start(config *config.Config) error {
+
+	s.authEnabled = config.Server.AuthEnabled
+	s.dbPassword = config.Server.Password
 	aofFilePath := config.Server.PersistentAOFPath
 	if aofFilePath != "" {
 		var err error
-		aofWriter, err = database.NewAOFWriter(aofFilePath)
+		s.aofWriter, err = database.NewAOFWriter(aofFilePath)
 		if err != nil {
 			return fmt.Errorf("failed to create AOF writer: %w", err)
 		}
-		persistenceEnabled = true
+		s.persistenceEnabled = true
 
 		if config.Server.ReplayAOFOnStartup {
 			file, err := os.Open(aofFilePath)
@@ -47,11 +86,11 @@ func StartServer(config *config.Config) error {
 				logger.Warnf("Failed to open AOF file: %v", err)
 			} else {
 				defer file.Close()
-				store.LoadFromAOF(aofFilePath)
+				s.store.LoadFromAOF(aofFilePath, s.commandRegistry)
 			}
 		}
 
-		defer aofWriter.Close()
+		defer s.aofWriter.Close()
 	} else {
 		logger.Warn("Persistence is disabled because the file path is empty in the config")
 	}
@@ -62,33 +101,51 @@ func StartServer(config *config.Config) error {
 	}
 
 	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
-	listener, err := tls.Listen("tcp", config.Server.Address, tlsConfig)
+	s.listener, err = tls.Listen("tcp", config.Server.Address, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to start TLS listener: %w", err)
 	}
-	defer listener.Close()
+	defer s.listener.Close()
 
 	logger.Infof("Secure server is listening on %s", config.Server.Address)
 
 	for {
-		conn, err := listener.Accept()
+		conn, err := s.listener.Accept()
+		select {
+		case <-s.shutdownChan:
+			return nil
+		default:
+		}
 		if err != nil {
 			logger.Warnf("Failed to accept connection: %v", err)
 			continue
 		}
 
-		conns.Store(conn, struct{}{})
-		go handleConnection(conn)
+		s.connMutex.Lock()
+		if s.maxConnections > 0 && s.connCount >= s.maxConnections {
+			s.connMutex.Unlock()
+			logger.Warnf("Connection limit reached, rejecting connection from %s", conn.RemoteAddr().String())
+			conn.Close()
+			continue
+		}
+		s.connCount++
+		s.connMutex.Unlock()
+
+		logger.Debugf("Accepted connection from %s", conn.RemoteAddr().String())
+
+		s.conns.Store(conn, struct{}{})
+		go s.handleConnection(conn)
 	}
 }
 
-func Shutdown(ctx context.Context) error {
-	if listener != nil {
-		listener.Close()
+func (s *Server) Shutdown(ctx context.Context) error {
+	close(s.shutdownChan)
+	if s.listener != nil {
+		s.listener.Close()
 	}
 
 	var wg sync.WaitGroup
-	conns.Range(func(key, value interface{}) bool {
+	s.conns.Range(func(key, value interface{}) bool {
 		conn := key.(net.Conn)
 		wg.Add(1)
 		go func() {
@@ -112,33 +169,54 @@ func Shutdown(ctx context.Context) error {
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func (s *Server) handleConnection(conn net.Conn) {
 	defer func() {
 		conn.Close()
-		conns.Delete(conn)
+		s.conns.Delete(conn)
+		s.connMutex.Lock()
+		s.connCount--
+		s.connMutex.Unlock()
 	}()
 	clientAddr := conn.RemoteAddr().String()
-	logger.Infof("Accepted connection from %s", clientAddr)
+	logger.Debugf("Handling connection from %s", clientAddr)
+
+	tlsConn, ok := conn.(*tls.Conn)
+	if ok {
+		if err := tlsConn.Handshake(); err != nil {
+			logger.Errorf("TLS handshake failed with %s: %v", clientAddr, err)
+			return
+		}
+	}
 
 	reader := bufio.NewReader(conn)
+	var rateLimiter <-chan time.Time
+	if s.rateLimit > 0 {
+		rateLimiter = time.Tick(time.Second / time.Duration(s.rateLimit))
+	}
 
 	for {
+		if s.rateLimit > 0 {
+			<-rateLimiter
+		}
 		command, err := reader.ReadString('\n')
 		if err != nil {
-			logger.Warnf("Connection closed by %s: %v", clientAddr, err)
+			logger.Debugf("Connection closed by %s: %v", clientAddr, err)
 			return
 		}
 
 		command = strings.TrimSpace(command)
-		response := handleCommand(conn, command)
+		response := s.handleCommand(conn, command)
 		conn.Write([]byte(response + "\n"))
 	}
 }
 
-func handleCommand(conn net.Conn, command string) string {
+func (s *Server) handleCommand(conn net.Conn, command string) string {
 	// Enforce authentication
-	if authEnabled {
-		if !authenticatedClients[conn] && !strings.HasPrefix(command, "AUTH ") {
+	if s.authEnabled {
+		s.authMutex.RLock()
+		authenticated := s.authenticatedClients[conn]
+		s.authMutex.RUnlock()
+		if !authenticated && !strings.HasPrefix(strings.ToUpper(command), "AUTH ") {
 			return "ERR authentication required"
 		}
 	}
@@ -148,162 +226,16 @@ func handleCommand(conn net.Conn, command string) string {
 		return "ERR invalid command"
 	}
 
-	switch strings.ToUpper(parts[0]) {
-	case "AUTH":
-		return handleAuth(conn, parts[1:])
-	case "PING":
-		return "PONG"
-	case "SET":
-		return handleSet(parts[1:])
-	case "GET":
-		return handleGet(parts[1:])
-	case "DEL":
-		return handleDel(parts[1:])
-	case "EXPIRE":
-		return handleExpire(parts[1:])
-	case "TTL":
-		return handleTTL(parts[1:])
-	case "FLUSHDB":
-		return handleFlushDB(store)
-	case "KEYS":
-		return handleKeys(parts[1:], store)
-	case "INCR":
-		return handleIncr(parts[1:], store)
-	case "DECR":
-		return handleDecr(parts[1:], store)
-	default:
+	cmd, exists := s.commandRegistry.Get(strings.ToUpper(parts[0]))
+	if !exists {
 		return "ERR unknown command"
 	}
+
+	return cmd.Execute(conn, parts[1:])
 }
 
-func handleSet(args []string) string {
-	if len(args) < 2 {
-		return "ERR wrong number of arguments for 'SET' command"
-	}
-	key, value := args[0], args[1]
-	// check if TTL is provided
-	if len(args) == 4 && args[2] == "EX" {
-		ttl, err := strconv.Atoi(args[3])
-		if err != nil || ttl <= 0 {
-			return "ERR invalid TTL"
-		}
-		store.SetWithTTL(key, value, time.Duration(ttl)*time.Second)
-		if persistenceEnabled {
-			aofWriter.Write(fmt.Sprintf("SET %s %s EX %d", key, value, ttl))
-		}
-		return "OK"
-	} else if len(args) == 2 {
-		store.Set(key, value)
-		if persistenceEnabled {
-			aofWriter.Write(fmt.Sprintf("SET %s %s", key, value))
-		}
-		return "OK"
-	}
-	return "ERR invalid arguments for 'SET' command"
-}
-
-func handleGet(args []string) string {
-	if len(args) != 1 {
-		return "ERR wrong number of arguments for 'GET' command"
-	}
-	key := args[0]
-	value, exists := store.Get(key)
-	if !exists {
-		return "nil"
-	}
-	return value
-}
-
-func handleDel(args []string) string {
-	if len(args) != 1 {
-		return "ERR wrong number of arguments for 'DEL' command"
-	}
-	key := args[0]
-	if store.Del(key) {
-		if persistenceEnabled {
-			aofWriter.Write(fmt.Sprintf("DEL %s", key))
-		}
-		return "OK"
-	}
-	return "nil"
-}
-
-func handleAuth(conn net.Conn, args []string) string {
-	if len(args) != 1 {
-		return "ERR missing password"
-	}
-
-	if args[0] == dbPassword {
-		authenticatedClients[conn] = true
-		return "OK"
-	}
-	return "ERR invalid password"
-}
-
-func handleExpire(args []string) string {
-	if len(args) != 2 {
-		return "ERR wrong number of arguments for 'EXPIRE' command"
-	}
-	key := args[0]
-	ttl, err := strconv.Atoi(args[1])
-	if err != nil || ttl <= 0 {
-		return "ERR invalid TTL"
-	}
-	if store.SetExpire(key, ttl) {
-		return "OK"
-	}
-	return "ERR key does not exist"
-}
-
-func handleTTL(args []string) string {
-	if len(args) != 1 {
-		return "ERR wrong number of arguments for 'TTL' command"
-	}
-	key := args[0]
-	ttl := store.TTL(key)
-	if ttl == -2 {
-		return "-2"
-	} else if ttl == -1 {
-		return "-1"
-	} else {
-		return fmt.Sprintf("%ds", ttl)
-	}
-}
-
-func handleFlushDB(store *database.KVStore) string {
-	store.FlushDB()
-	return "OK"
-}
-
-func handleKeys(args []string, store *database.KVStore) string {
-	if len(args) < 1 {
-		return "ERR missing pattern"
-	}
-	pattern := args[0]
-	keys := store.Keys(pattern)
-	return strings.Join(keys, " ")
-}
-
-func handleIncr(args []string, store *database.KVStore) string {
-	if len(args) < 1 {
-		return "ERR missing key"
-	}
-	key := args[0]
-	value, err := store.Incr(key)
-	if err != nil {
-		return fmt.Sprintf("ERR %v", err)
-	}
-	return strconv.Itoa(value)
-}
-
-func handleDecr(args []string, store *database.KVStore) string {
-	if len(args) < 1 {
-		return "ERR missing key"
-	}
-	key := args[0]
-	value, err := store.Decr(key)
-	if err != nil {
-		return fmt.Sprintf("ERR %v", err)
-	}
-	return strconv.Itoa(value)
+func (s *Server) authenticateClient(conn net.Conn) {
+	s.authMutex.Lock()
+	s.authenticatedClients[conn] = true
+	s.authMutex.Unlock()
 }
