@@ -110,9 +110,8 @@ func printBenchmarkResults(results map[string]client.BenchmarkResult, successful
 	}
 
 	table.Render()
-	fmt.Printf("Successful clients: %d\n", successfulClients)
+	fmt.Printf("Successful clients: %d/%d\n", successfulClients, clients)
+	fmt.Printf("Iterations per client: %d\n", iterations)
 	fmt.Printf("Total commands executed: %d\n", totalCommands)
 	fmt.Printf("Total duration: %.2f seconds\n", duration.Seconds())
-	fmt.Printf("Clients: %d\n", clients)
-	fmt.Printf("Iterations per client: %d\n", iterations)
 }
