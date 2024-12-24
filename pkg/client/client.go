@@ -76,11 +76,12 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-func (c *Client) Benchmark(commands []string, clients, iterations int) (map[string]BenchmarkResult, int, time.Duration, error) {
+func (c *Client) Benchmark(commands []string, clients, iterations int) (map[string]BenchmarkResult, int, int, time.Duration, error) {
 	var wg sync.WaitGroup
 	results := make(map[string][]time.Duration)
 	mu := sync.Mutex{}
 	totalCommands := 0
+	successfulClients := 0
 
 	start := time.Now()
 
@@ -90,22 +91,25 @@ func (c *Client) Benchmark(commands []string, clients, iterations int) (map[stri
 			defer wg.Done()
 			client, err := NewClient(c.conn.RemoteAddr().String(), c.password, c.authEnabled)
 			if err != nil {
-				fmt.Printf("Failed to create client: %v\n", err)
 				return
 			}
 			defer client.Close()
 
+			mu.Lock()
+			successfulClients++
+			mu.Unlock()
+
 			for j := 0; j < iterations; j++ {
 				for _, command := range commands {
+					mainCommand := strings.Split(command, " ")[0]
 					start := time.Now()
 					_, err := client.SendCommand(command)
 					duration := time.Since(start)
 					if err != nil {
-						fmt.Printf("Failed to send command: %v\n", err)
 						return
 					}
 					mu.Lock()
-					results[command] = append(results[command], duration)
+					results[mainCommand] = append(results[mainCommand], duration)
 					totalCommands++
 					mu.Unlock()
 				}
@@ -136,5 +140,5 @@ func (c *Client) Benchmark(commands []string, clients, iterations int) (map[stri
 		}
 	}
 
-	return benchmarkResults, totalCommands, elapsed, nil
+	return benchmarkResults, successfulClients, totalCommands, elapsed, nil
 }

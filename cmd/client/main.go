@@ -49,11 +49,11 @@ func main() {
 		if *command != "" {
 			commands = strings.Split(*command, ",")
 		}
-		results, totalCommands, duration, err := client.Benchmark(commands, *clients, *iterations)
+		results, successfulClients, totalCommands, duration, err := client.Benchmark(commands, *clients, *iterations)
 		if err != nil {
 			log.Fatalf("Benchmark failed: %v", err)
 		}
-		printBenchmarkResults(results, totalCommands, duration)
+		printBenchmarkResults(results, successfulClients, totalCommands, duration, *clients, *iterations)
 	} else {
 		if *command != "" {
 			response, err := client.SendCommand(*command)
@@ -93,7 +93,7 @@ func interactiveMode(client *client.Client) {
 	}
 }
 
-func printBenchmarkResults(results map[string]client.BenchmarkResult, totalCommands int, duration time.Duration) {
+func printBenchmarkResults(results map[string]client.BenchmarkResult, successfulClients, totalCommands int, duration time.Duration, clients, iterations int) {
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Command", "Min (ms)", "Max (ms)", "Avg (ms)", "P99 (ms)", "Throughput (ops/sec)"})
 
@@ -110,4 +110,9 @@ func printBenchmarkResults(results map[string]client.BenchmarkResult, totalComma
 	}
 
 	table.Render()
+	fmt.Printf("Successful clients: %d\n", successfulClients)
+	fmt.Printf("Total commands executed: %d\n", totalCommands)
+	fmt.Printf("Total duration: %.2f seconds\n", duration.Seconds())
+	fmt.Printf("Clients: %d\n", clients)
+	fmt.Printf("Iterations per client: %d\n", iterations)
 }
