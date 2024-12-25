@@ -7,4 +7,4 @@ server:
 
 log:
   file: "synchrodb.log"
-  debug: true
+  debug: false

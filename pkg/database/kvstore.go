@@ -36,68 +36,57 @@ func (r *CommandRegistry) Get(name string) (Command, bool) {
 }
 
 type KVStore struct {
-	data        map[string]string
-	expirations map[string]time.Time
-	mu          sync.RWMutex
+	data        sync.Map
+	expirations sync.Map
 }
 
 func NewKVStore() *KVStore {
-	store := &KVStore{
-		data:        make(map[string]string),
-		expirations: make(map[string]time.Time),
-	}
+	store := &KVStore{}
 	go store.cleanupExpiredKeys()
 	return store
 }
 
 func (store *KVStore) Set(key, value string) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	store.data[key] = value
-	delete(store.expirations, key) // Remove expiration if it exists
+	store.data.Store(key, value)
+	store.expirations.Delete(key) // Remove expiration if it exists
 }
 
 func (store *KVStore) SetWithTTL(key, value string, ttl time.Duration) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	store.data[key] = value
-	store.expirations[key] = time.Now().Add(ttl)
+	store.data.Store(key, value)
+	store.expirations.Store(key, time.Now().Add(ttl))
 }
 
 func (store *KVStore) SetExpire(key string, ttl int) bool {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	if _, exists := store.data[key]; exists {
-		store.expirations[key] = time.Now().Add(time.Duration(ttl) * time.Second)
+	if _, exists := store.data.Load(key); exists {
+		store.expirations.Store(key, time.Now().Add(time.Duration(ttl)*time.Second))
 		return true
 	}
 	return false
 }
 
 func (store *KVStore) Get(key string) (string, bool) {
-	store.mu.RLock()
-	defer store.mu.RUnlock()
-
-	if exp, exists := store.expirations[key]; exists && time.Now().After(exp) {
-		return "", false // Key has expired
+	if exp, exists := store.expirations.Load(key); exists {
+		if time.Now().After(exp.(time.Time)) {
+			return "", false // Key has expired
+		}
 	}
 
-	value, exists := store.data[key]
-	return value, exists
+	value, exists := store.data.Load(key)
+	if !exists {
+		return "", false
+	}
+	return value.(string), true
 }
 
 func (store *KVStore) TTL(key string) int {
-	store.mu.RLock()
-	defer store.mu.RUnlock()
-
-	if exp, exists := store.expirations[key]; exists {
-		if time.Now().After(exp) {
+	if exp, exists := store.expirations.Load(key); exists {
+		if time.Now().After(exp.(time.Time)) {
 			return -2 // Key has expired
 		}
-		return int(time.Until(exp).Seconds())
+		return int(time.Until(exp.(time.Time)).Seconds())
 	}
 
-	if _, exists := store.data[key]; !exists {
+	if _, exists := store.data.Load(key); !exists {
 		return -2 // Key does not exist
 	} else {
 		return -1 // Key exists but has no associated expiration
@@ -105,11 +94,9 @@ func (store *KVStore) TTL(key string) int {
 }
 
 func (store *KVStore) Del(key string) bool {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	if _, exists := store.data[key]; exists {
-		delete(store.data, key)
-		delete(store.expirations, key)
+	if _, exists := store.data.Load(key); exists {
+		store.data.Delete(key)
+		store.expirations.Delete(key)
 		return true
 	}
 	return false
@@ -119,14 +106,13 @@ func (store *KVStore) cleanupExpiredKeys() {
 	for {
 		time.Sleep(1 * time.Second) // Run every second
 		now := time.Now()
-		store.mu.Lock()
-		for key, exp := range store.expirations {
-			if now.After(exp) {
-				delete(store.data, key)
-				delete(store.expirations, key)
+		store.expirations.Range(func(key, exp interface{}) bool {
+			if now.After(exp.(time.Time)) {
+				store.data.Delete(key)
+				store.expirations.Delete(key)
 			}
-		}
-		store.mu.Unlock()
+			return true
+		})
 	}
 }
 
@@ -174,54 +160,47 @@ func (store *KVStore) LoadFromAOF(filepath string, commandRegistry *CommandRegis
 }
 
 func (store *KVStore) FlushDB() {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	store.data = make(map[string]string)
-	store.expirations = make(map[string]time.Time)
+	store.data = sync.Map{}
+	store.expirations = sync.Map{}
 }
 
 func (store *KVStore) Keys(pattern string) []string {
-	store.mu.RLock()
-	defer store.mu.RUnlock()
 	keys := []string{}
-	for key := range store.data {
-		if utils.MatchPattern(key, pattern) {
-			keys = append(keys, key)
+	store.data.Range(func(key, value interface{}) bool {
+		if utils.MatchPattern(key.(string), pattern) {
+			keys = append(keys, key.(string))
 		}
-	}
+		return true
+	})
 	return keys
 }
 
 func (store *KVStore) Incr(key string) (int, error) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	value, exists := store.data[key]
+	value, exists := store.data.Load(key)
 	if !exists {
-		store.data[key] = "1"
+		store.data.Store(key, "1")
 		return 1, nil
 	}
-	intValue, err := strconv.Atoi(value)
+	intValue, err := strconv.Atoi(value.(string))
 	if err != nil {
 		return 0, fmt.Errorf("value is not an integer")
 	}
 	intValue++
-	store.data[key] = strconv.Itoa(intValue)
+	store.data.Store(key, strconv.Itoa(intValue))
 	return intValue, nil
 }
 
 func (store *KVStore) Decr(key string) (int, error) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	value, exists := store.data[key]
+	value, exists := store.data.Load(key)
 	if !exists {
-		store.data[key] = "-1"
+		store.data.Store(key, "-1")
 		return -1, nil
 	}
-	intValue, err := strconv.Atoi(value)
+	intValue, err := strconv.Atoi(value.(string))
 	if err != nil {
 		return 0, fmt.Errorf("value is not an integer")
 	}
 	intValue--
-	store.data[key] = strconv.Itoa(intValue)
+	store.data.Store(key, strconv.Itoa(intValue))
 	return intValue, nil
 }

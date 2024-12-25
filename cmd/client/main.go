@@ -101,11 +101,11 @@ func printBenchmarkResults(results map[string]client.BenchmarkResult, successful
 		throughput := float64(totalCommands) / duration.Seconds()
 		table.Append([]string{
 			command,
-			fmt.Sprintf("%.2f", result.Min.Seconds()*1000),
-			fmt.Sprintf("%.2f", result.Max.Seconds()*1000),
-			fmt.Sprintf("%.2f", result.Avg.Seconds()*1000),
-			fmt.Sprintf("%.2f", result.P99.Seconds()*1000),
-			fmt.Sprintf("%.2f", throughput),
+			fmt.Sprintf("%.3f", result.Min.Seconds()*1000),
+			fmt.Sprintf("%.3f", result.Max.Seconds()*1000),
+			fmt.Sprintf("%.3f", result.Avg.Seconds()*1000),
+			fmt.Sprintf("%.3f", result.P99.Seconds()*1000),
+			fmt.Sprintf("%.3f", throughput),
 		})
 	}
 
