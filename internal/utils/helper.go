@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-// Helper function for pattern matching
+// Helper function for pattern matching.
 func MatchPattern(key, pattern string) bool {
 	// If the pattern contains a wildcard '*', convert it to a regex-like pattern
 	if strings.Contains(pattern, "*") {

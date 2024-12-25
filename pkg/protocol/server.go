@@ -68,7 +68,6 @@ func (s *Server) registerCommands() {
 }
 
 func (s *Server) Start(config *config.Config) error {
-
 	s.authEnabled = config.Server.AuthEnabled
 	s.dbPassword = config.Server.Password
 	aofFilePath := config.Server.PersistentAOFPath

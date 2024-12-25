@@ -13,7 +13,7 @@ type AOFWriter struct {
 }
 
 func NewAOFWriter(filepath string) (*AOFWriter, error) {
-	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, err
 	}
