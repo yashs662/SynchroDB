@@ -122,6 +122,7 @@ func Error(message string) {
 
 func Fatal(message string) {
 	logQueue <- logEntry{level: "FATAL", message: message}
+	processLogQueue()
 }
 
 func Debug(message string) {
@@ -148,6 +149,7 @@ func Errorf(format string, v ...interface{}) {
 func Fatalf(format string, v ...interface{}) {
 	msg := fmt.Sprintf(format, v...)
 	logQueue <- logEntry{level: "FATAL", message: msg}
+	processLogQueue()
 }
 
 func Debugf(format string, v ...interface{}) {
