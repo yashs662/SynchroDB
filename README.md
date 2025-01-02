@@ -2,6 +2,10 @@
 
 My attempt at making a distributed KV store
 
+```
+⚠️⚠️ This project is currently a work in progress and is not yet completed. ⚠️⚠️
+```
+
 # Help
 
 ### How to generate certificates
