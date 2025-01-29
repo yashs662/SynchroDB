@@ -1,4 +1,5 @@
 # SynchroDB
+![Leonardo_Phoenix_10_Depict_a_futuristic_hightech_illustration_3](https://github.com/user-attachments/assets/ef39414c-1423-49ad-9089-94ba4bb8b7cc)
 
 My attempt at making a distributed KV store
 
