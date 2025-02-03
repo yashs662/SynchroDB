@@ -75,7 +75,7 @@ func interactiveMode(client *client.Client) {
 			log.Fatalf("Failed to read input: %v", err)
 		}
 		command = strings.TrimSpace(command)
-		// TODO: Add support for more client specific commands like clear, etc.
+		// TODO: Add support for more client specific commands like clear, up down navigation for history etc.
 		if command == "exit" {
 			break
 		}
