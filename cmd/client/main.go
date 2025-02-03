@@ -13,20 +13,29 @@ import (
 	"github.com/olekukonko/tablewriter"
 	"github.com/yashs662/SynchroDB/internal/config"
 	"github.com/yashs662/SynchroDB/pkg/client"
+	"github.com/yashs662/SynchroDB/pkg/protocol"
+)
+
+var (
+	benchmarkPrefix = "synchrodb-benchmark"
+	pingCommand     = protocol.PingCommand{}
+	setCommand      = protocol.SetCommand{}
+	getCommand      = protocol.GetCommand{}
+	incrCommand     = protocol.IncrCommand{}
+	decrCommand     = protocol.DecrCommand{}
 )
 
 var defaultCommands = []string{
-	"PING",
-	"SET synchrodb-benchmark:test 123",
-	"GET synchrodb-benchmark:test",
-	"INCR synchrodb-benchmark:test",
-	"DECR synchrodb-benchmark:test",
+	pingCommand.GetCommandInfo().Command,
+	fmt.Sprintf("%s %s:test 123", setCommand.GetCommandInfo().Command, benchmarkPrefix),
+	fmt.Sprintf("%s %s:test", getCommand.GetCommandInfo().Command, benchmarkPrefix),
+	fmt.Sprintf("%s %s:test", incrCommand.GetCommandInfo().Command, benchmarkPrefix),
+	fmt.Sprintf("%s %s:test", decrCommand.GetCommandInfo().Command, benchmarkPrefix),
 }
 
 func main() {
 	address := flag.String("address", "127.0.0.1:8000", "Server address")
 	configPath := flag.String("config", "config/server.yaml", "Path to the server config file")
-	command := flag.String("command", "", "Comma-separated list of commands to send to the server")
 	benchmark := flag.Bool("benchmark", false, "Benchmark the command")
 	clients := flag.Int("clients", 10, "Number of concurrent clients for benchmarking")
 	iterations := flag.Int("iterations", 1000, "Number of iterations per client for benchmarking")
@@ -46,24 +55,13 @@ func main() {
 
 	if *benchmark {
 		commands := defaultCommands
-		if *command != "" {
-			commands = strings.Split(*command, ",")
-		}
 		results, successfulClients, totalCommands, duration, err := client.Benchmark(commands, *clients, *iterations)
 		if err != nil {
 			log.Fatalf("Benchmark failed: %v", err)
 		}
 		printBenchmarkResults(results, successfulClients, totalCommands, duration, *clients, *iterations)
 	} else {
-		if *command != "" {
-			response, err := client.SendCommand(*command)
-			if err != nil {
-				log.Fatalf("Failed to send command: %v", err)
-			}
-			fmt.Printf("Response: %s\n", response)
-		} else {
-			interactiveMode(client)
-		}
+		interactiveMode(client)
 	}
 }
 
@@ -77,6 +75,7 @@ func interactiveMode(client *client.Client) {
 			log.Fatalf("Failed to read input: %v", err)
 		}
 		command = strings.TrimSpace(command)
+		// TODO: Add support for more client specific commands like clear, etc.
 		if command == "exit" {
 			break
 		}

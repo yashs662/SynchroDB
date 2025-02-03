@@ -9,6 +9,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yashs662/SynchroDB/internal/utils"
+	"github.com/yashs662/SynchroDB/pkg/protocol"
 )
 
 type Client struct {
@@ -48,7 +51,8 @@ func NewClient(address, password string, authEnabled bool) (*Client, error) {
 }
 
 func (c *Client) authenticate() error {
-	response, err := c.SendCommand(fmt.Sprintf("AUTH %s", c.password))
+	authCommand := protocol.AuthCommand{}
+	response, err := c.SendCommand(fmt.Sprintf("%s %s", authCommand.GetCommandInfo().Command, c.password))
 	if err != nil {
 		return fmt.Errorf("failed to authenticate: %w", err)
 	}
@@ -69,7 +73,7 @@ func (c *Client) SendCommand(command string) (string, error) {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
-	return strings.TrimSpace(response), nil
+	return utils.ParseServerResponse(response), nil
 }
 
 func (c *Client) Close() error {

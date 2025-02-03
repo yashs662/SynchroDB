@@ -54,17 +54,11 @@ func NewServer(config *config.Config, store *database.KVStore, aofWriter *databa
 }
 
 func (s *Server) registerCommands() {
-	s.commandRegistry.Register("AUTH", &AuthCommand{server: s})
-	s.commandRegistry.Register("PING", &PingCommand{})
-	s.commandRegistry.Register("SET", &SetCommand{server: s})
-	s.commandRegistry.Register("GET", &GetCommand{server: s})
-	s.commandRegistry.Register("DEL", &DelCommand{server: s})
-	s.commandRegistry.Register("EXPIRE", &ExpireCommand{server: s})
-	s.commandRegistry.Register("TTL", &TTLCommand{server: s})
-	s.commandRegistry.Register("FLUSHDB", &FlushDBCommand{server: s})
-	s.commandRegistry.Register("KEYS", &KeysCommand{server: s})
-	s.commandRegistry.Register("INCR", &IncrCommand{server: s})
-	s.commandRegistry.Register("DECR", &DecrCommand{server: s})
+	commands := AllCommands(s)
+
+	for _, cmd := range commands {
+		s.commandRegistry.Register(cmd.GetCommandInfo().Command, cmd)
+	}
 }
 
 func (s *Server) Start(config *config.Config) error {
@@ -215,7 +209,14 @@ func (s *Server) handleCommand(conn net.Conn, command string) string {
 		s.authMutex.RLock()
 		authenticated := s.authenticatedClients[conn]
 		s.authMutex.RUnlock()
-		if !authenticated && !strings.HasPrefix(strings.ToUpper(command), "AUTH ") {
+
+		authCommand := AuthCommand{}
+		authCommandName := authCommand.GetCommandInfo().Command
+		// add a space after the command name to avoid partial matches
+		// e.g. AUTH and AUTHENTICATE
+		authCommandName += " "
+
+		if !authenticated && !strings.HasPrefix(strings.ToUpper(command), authCommandName) {
 			return "ERR authentication required"
 		}
 	}

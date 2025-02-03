@@ -7,8 +7,40 @@ import (
 	"strings"
 	"time"
 
+	"github.com/olekukonko/tablewriter"
+	"github.com/yashs662/SynchroDB/internal/utils"
 	"github.com/yashs662/SynchroDB/pkg/database"
 )
+
+func AllCommands(server *Server) []Command {
+	return []Command{
+		&AuthCommand{server: server},
+		&PingCommand{server: server},
+		&SetCommand{server: server},
+		&GetCommand{server: server},
+		&DelCommand{server: server},
+		&ExpireCommand{server: server},
+		&TTLCommand{server: server},
+		&FlushDBCommand{server: server},
+		&KeysCommand{server: server},
+		&IncrCommand{server: server},
+		&DecrCommand{server: server},
+		&HelpCommand{server: server},
+	}
+}
+
+type CommandDescription struct {
+	Command  string
+	Name     string
+	Syntax   string
+	HelpText string
+}
+
+type Command interface {
+	Execute(conn net.Conn, args []string) string
+	Replay(args []string, store *database.KVStore) error
+	GetCommandInfo() CommandDescription
+}
 
 type AuthCommand struct {
 	server *Server
@@ -30,7 +62,19 @@ func (c *AuthCommand) Replay(args []string, store *database.KVStore) error {
 	return nil // No-op for replay
 }
 
-type PingCommand struct{}
+func (c *AuthCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "AUTH",
+		Name:     "Authenticate",
+		Syntax:   "AUTH <password>",
+		HelpText: "Authenticate with the server",
+	}
+}
+
+type PingCommand struct {
+	// not needed here but kept for consistency
+	server *Server
+}
 
 func (c *PingCommand) Execute(conn net.Conn, args []string) string {
 	return "PONG"
@@ -38,6 +82,15 @@ func (c *PingCommand) Execute(conn net.Conn, args []string) string {
 
 func (c *PingCommand) Replay(args []string, store *database.KVStore) error {
 	return nil // No-op for replay
+}
+
+func (c *PingCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "PING",
+		Name:     "Ping",
+		Syntax:   "PING",
+		HelpText: "Check if the server is alive",
+	}
 }
 
 type SetCommand struct {
@@ -86,6 +139,15 @@ func (c *SetCommand) Replay(args []string, store *database.KVStore) error {
 	return nil
 }
 
+func (c *SetCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "SET",
+		Name:     "Set",
+		Syntax:   "SET <key> <value> [EX <seconds>]",
+		HelpText: "Set a key with a value and an optional expiration",
+	}
+}
+
 type GetCommand struct {
 	server *Server
 }
@@ -104,6 +166,15 @@ func (c *GetCommand) Execute(conn net.Conn, args []string) string {
 
 func (c *GetCommand) Replay(args []string, store *database.KVStore) error {
 	return nil // No-op for replay
+}
+
+func (c *GetCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "GET",
+		Name:     "Get",
+		Syntax:   "GET <key>",
+		HelpText: "Get the value of a key",
+	}
 }
 
 type DelCommand struct {
@@ -131,6 +202,15 @@ func (c *DelCommand) Replay(args []string, store *database.KVStore) error {
 	key := args[0]
 	store.Del(key)
 	return nil
+}
+
+func (c *DelCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "DEL",
+		Name:     "Delete",
+		Syntax:   "DEL <key>",
+		HelpText: "Delete a key",
+	}
 }
 
 type ExpireCommand struct {
@@ -168,6 +248,15 @@ func (c *ExpireCommand) Replay(args []string, store *database.KVStore) error {
 	return nil
 }
 
+func (c *ExpireCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "EXPIRE",
+		Name:     "Expire",
+		Syntax:   "EXPIRE <key> <seconds>",
+		HelpText: "Set a key's time to live in seconds",
+	}
+}
+
 type TTLCommand struct {
 	server *Server
 }
@@ -191,6 +280,15 @@ func (c *TTLCommand) Replay(args []string, store *database.KVStore) error {
 	return nil // No-op for replay
 }
 
+func (c *TTLCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "TTL",
+		Name:     "Time to Live",
+		Syntax:   "TTL <key>",
+		HelpText: "Get the time to live of a key",
+	}
+}
+
 type FlushDBCommand struct {
 	server *Server
 }
@@ -206,6 +304,15 @@ func (c *FlushDBCommand) Execute(conn net.Conn, args []string) string {
 func (c *FlushDBCommand) Replay(args []string, store *database.KVStore) error {
 	store.FlushDB()
 	return nil
+}
+
+func (c *FlushDBCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "FLUSHDB",
+		Name:     "Flush Database",
+		Syntax:   "FLUSHDB",
+		HelpText: "Remove all keys from the database",
+	}
 }
 
 type KeysCommand struct {
@@ -227,6 +334,15 @@ func (c *KeysCommand) Execute(conn net.Conn, args []string) string {
 
 func (c *KeysCommand) Replay(args []string, store *database.KVStore) error {
 	return nil // No-op for replay
+}
+
+func (c *KeysCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "KEYS",
+		Name:     "Keys",
+		Syntax:   "KEYS <pattern>",
+		HelpText: "Find all keys matching the given pattern",
+	}
 }
 
 type IncrCommand struct {
@@ -257,6 +373,15 @@ func (c *IncrCommand) Replay(args []string, store *database.KVStore) error {
 	return err
 }
 
+func (c *IncrCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "INCR",
+		Name:     "Increment",
+		Syntax:   "INCR <key>",
+		HelpText: "Increment the integer value of a key by one",
+	}
+}
+
 type DecrCommand struct {
 	server *Server
 }
@@ -283,4 +408,53 @@ func (c *DecrCommand) Replay(args []string, store *database.KVStore) error {
 	key := args[0]
 	_, err := store.Decr(key)
 	return err
+}
+
+func (c *DecrCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "DECR",
+		Name:     "Decrement",
+		Syntax:   "DECR <key>",
+		HelpText: "Decrement the integer value of a key by one",
+	}
+}
+
+type HelpCommand struct {
+	server *Server
+}
+
+func (c *HelpCommand) Execute(conn net.Conn, args []string) string {
+	tableString := &strings.Builder{}
+	table := tablewriter.NewWriter(tableString)
+	table.SetHeader([]string{"Command", "Syntax", "Description"})
+	table.SetRowLine(true)
+
+	for _, command := range AllCommands(c.server) {
+		description := command.GetCommandInfo()
+		table.Append([]string{
+			description.Name,
+			description.Syntax,
+			description.HelpText,
+		})
+	}
+
+	table.Render()
+
+	// replace the \n in the rendered string with <br> for the client to parse
+	renderedString := utils.FormatMultilineResponse(tableString.String())
+
+	return renderedString
+}
+
+func (c *HelpCommand) Replay(args []string, store *database.KVStore) error {
+	return nil // No-op for replay
+}
+
+func (c *HelpCommand) GetCommandInfo() CommandDescription {
+	return CommandDescription{
+		Command:  "HELP",
+		Name:     "Help",
+		Syntax:   "HELP",
+		HelpText: "Show this help message",
+	}
 }
