@@ -21,6 +21,15 @@ type Client struct {
 	authEnabled bool
 }
 
+type ControlFlow int
+
+const (
+	CONTINUE ControlFlow = iota
+	NOTFOUND
+	ERROR
+	EXIT
+)
+
 type BenchmarkResult struct {
 	Min time.Duration
 	Max time.Duration

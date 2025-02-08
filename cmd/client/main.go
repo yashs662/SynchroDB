@@ -65,29 +65,41 @@ func main() {
 	}
 }
 
-func interactiveMode(client *client.Client) {
+func interactiveMode(c *client.Client) {
+	registry := client.NewCommandRegistry()
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Println("Entering interactive mode. Type 'exit' to quit.")
 	for {
 		fmt.Print("> ")
-		command, err := reader.ReadString('\n')
+		commandLine, err := reader.ReadString('\n')
 		if err != nil {
 			log.Fatalf("Failed to read input: %v", err)
 		}
-		command = strings.TrimSpace(command)
-		// TODO: Add support for more client specific commands like clear, up down navigation for history etc.
-		if command == "exit" {
+		commandLine = strings.TrimSpace(commandLine)
+		parts := strings.Split(commandLine, " ")
+		commandName := parts[0]
+		args := parts[1:]
+
+		commandResponse := registry.Execute(commandName, c, args)
+		if commandResponse.ControlFlow == client.EXIT {
+			color.Green(commandResponse.Response)
 			break
-		}
-		response, err := client.SendCommand(command)
-		if err != nil {
-			color.Red("Error: %v\n", err)
-		} else {
-			if strings.HasPrefix(response, "ERR") {
-				color.Red("Response: %s\n", response)
+		} else if commandResponse.ControlFlow == client.ERROR {
+			color.Red(commandResponse.Response)
+		} else if commandResponse.ControlFlow == client.NOTFOUND {
+			// send the command to the database
+			response, err := c.SendCommand(commandLine)
+			if err != nil {
+				color.Red("Error: %v\n", err)
 			} else {
-				color.Green("Response: %s\n", response)
+				if strings.HasPrefix(response, "ERR") {
+					color.Red("Response: %s\n", response)
+				} else {
+					color.Green("Response: %s\n", response)
+				}
 			}
+		} else {
+			color.Green(commandResponse.Response)
 		}
 	}
 }

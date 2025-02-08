@@ -5,6 +5,7 @@ import (
 )
 
 const MultilineResponseDelimiter = "<br>"
+const MultipleCommandsDelimiter = "<|>"
 
 // Helper function for pattern matching.
 func MatchPattern(key, pattern string) bool {

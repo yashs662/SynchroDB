@@ -1,13 +1,13 @@
 package protocol
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/olekukonko/tablewriter"
 	"github.com/yashs662/SynchroDB/internal/utils"
 	"github.com/yashs662/SynchroDB/pkg/database"
 )
@@ -326,8 +326,11 @@ func (c *KeysCommand) Execute(conn net.Conn, args []string) string {
 	pattern := args[0]
 	keys := c.server.store.Keys(pattern)
 	if len(keys) > 20 {
-		conn.Write([]byte("WARNING: More than 20 keys detected, displaying first 20 keys only.\n"))
 		keys = keys[:20]
+		return fmt.Sprintf("WARNING: More than 20 keys detected, displaying first 20 keys only.%s%s", utils.MultilineResponseDelimiter, strings.Join(keys, ", "))
+	}
+	if len(keys) == 0 {
+		return fmt.Sprintf("WARNING: No keys found matching pattern: '%s'", pattern)
 	}
 	return strings.Join(keys, ", ")
 }
@@ -424,26 +427,17 @@ type HelpCommand struct {
 }
 
 func (c *HelpCommand) Execute(conn net.Conn, args []string) string {
-	tableString := &strings.Builder{}
-	table := tablewriter.NewWriter(tableString)
-	table.SetHeader([]string{"Command", "Syntax", "Description"})
-	table.SetRowLine(true)
-
+	// create json stringified response of all command descriptions
+	var commandDescriptions []CommandDescription
 	for _, command := range AllCommands(c.server) {
-		description := command.GetCommandInfo()
-		table.Append([]string{
-			description.Name,
-			description.Syntax,
-			description.HelpText,
-		})
+		commandDescriptions = append(commandDescriptions, command.GetCommandInfo())
 	}
 
-	table.Render()
-
-	// replace the \n in the rendered string with <br> for the client to parse
-	renderedString := utils.FormatMultilineResponse(tableString.String())
-
-	return renderedString
+	stringifiedJSON, err := json.Marshal(commandDescriptions)
+	if err != nil {
+		return fmt.Sprintf("failed to create help message: %v", err)
+	}
+	return string(stringifiedJSON)
 }
 
 func (c *HelpCommand) Replay(args []string, store *database.KVStore) error {
