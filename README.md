@@ -3,9 +3,8 @@
 
 My attempt at making a distributed KV store
 
-```
-⚠️⚠️ This project is currently a work in progress and is not yet completed. ⚠️⚠️
-```
+> [!IMPORTANT]
+> <strong>⚠️ The project is still in early development, expect bugs, safety issues, and things that don't work ⚠️</strong> 
 
 # Help
 
