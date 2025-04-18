@@ -15,10 +15,10 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout server-key.pem -out 
 ```
 
 
-### Test using openssl
+### Test using openssl (not recommended)
 
 ```
-openssl s_client -connect localhost:6379
+openssl s_client -connect localhost:8000
 ```
 
 

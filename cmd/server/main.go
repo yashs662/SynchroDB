@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,7 +15,11 @@ import (
 )
 
 func main() {
-	config, err := config.LoadConfig()
+	configPath := flag.String("config", "config/server.yaml", "Path to configuration file")
+	flag.Parse()
+
+	// Load configuration from specified path
+	config, err := config.LoadConfigFromPath(*configPath)
 	if err != nil {
 		fmt.Println("FATAL: " + err.Error())
 		os.Exit(1)

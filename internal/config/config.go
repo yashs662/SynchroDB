@@ -16,6 +16,8 @@ type Config struct {
 		ReplayAOFOnStartup bool   `yaml:"replay_aof_on_startup"`
 		MaxConnections     int    `yaml:"max_connections"`
 		RateLimit          int    `yaml:"rate_limit"`
+		CertFile           string `yaml:"cert_file"`
+		KeyFile            string `yaml:"key_file"`
 	} `yaml:"server"`
 	Log struct {
 		File  string `yaml:"file"`

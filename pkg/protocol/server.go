@@ -88,7 +88,7 @@ func (s *Server) Start(config *config.Config) error {
 		logger.Warn("Persistence is disabled because the file path is empty in the config")
 	}
 
-	cert, err := tls.LoadX509KeyPair("server-cert.pem", "server-key.pem")
+	cert, err := tls.LoadX509KeyPair(config.Server.CertFile, config.Server.KeyFile)
 	if err != nil {
 		return fmt.Errorf("failed to load TLS certificates: %w", err)
 	}

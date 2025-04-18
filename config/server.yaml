@@ -4,6 +4,8 @@ server:
   persistent_aof_path: "synchrodb.aof"
   auth_enabled: true
   replay_aof_on_startup: true
+  cert_file: "server-cert.pem"
+  key_file: "server-key.pem"
 
 log:
   file: "synchrodb.log"
